@@ -1,5 +1,5 @@
 from sense_hat import SenseHat
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, send_file
 import time
 import logging
 import threading
@@ -40,6 +40,9 @@ try:
 except Exception as e:
     logging.error(f"Failed to load image: {e}")
     image_base64 = ""  # Keep empty if failed
+
+# Path to favicon file
+favicon_path = "/home/fakebizprez/temp-favicon.ico"
 
 def get_cpu_temperature():
     """Get the temperature of the CPU for compensation"""
@@ -131,6 +134,7 @@ def index():
             <title>Server Room Environmental Monitor</title>
             <meta http-equiv="refresh" content="60">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="shortcut icon" href="/favicon.ico">
             <style>
                 body { 
                     font-family: Arial, sans-serif; 
@@ -205,6 +209,15 @@ def index():
         last_updated=last_updated,
         image_data=image_base64
     )
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the favicon"""
+    try:
+        return send_file(favicon_path, mimetype='image/x-icon')
+    except Exception as e:
+        logging.error(f"Failed to serve favicon: {e}")
+        return "", 404  # Return empty response with 404 status code if favicon not found
 
 @app.route('/api/temp')
 def api_temp():
