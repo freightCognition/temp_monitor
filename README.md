@@ -2,7 +2,7 @@
 
 A lightweight environmental monitoring system for server rooms or any space where temperature and humidity tracking is critical. Built on a Raspberry Pi Zero 2 W with a Sense HAT.
 
-![Environmental Monitor](https://github.com/yourusername/temp_monitor/raw/main/docs/screenshot.png)
+![Environmental Monitor](https://github.com/fakebizprez/temp_monitor/blob/master/assets/temp-favicon.png
 
 ## Features
 
