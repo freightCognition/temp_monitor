@@ -136,38 +136,39 @@ def index():
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <link rel="shortcut icon" href="/favicon.ico">
             <style>
-                body { 
-                    font-family: Arial, sans-serif; 
-                    text-align: center; 
+                body {
+                    font-family: Arial, sans-serif;
+                    text-align: center;
                     margin: 0;
                     padding: 20px;
-                    background-color: #f5f5f5;
+                    background-color: #30173D; /* Space */
+                    color: #F4F4F1; /* Starlight */
                 }
                 .container {
                     max-width: 800px;
                     margin: 0 auto;
-                    background-color: white;
+                    background-color: #261230; /* Galaxy */
                     border-radius: 10px;
                     padding: 20px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
                 }
-                h1 { color: #333; }
+                h1 { color: #DE5FE9; /* Cosmic */ }
                 .reading {
                     font-size: 72px;
                     font-weight: bold;
                     margin: 20px 0;
                 }
-                .temp { color: #e74c3c; }
-                .humidity { color: #3498db; }
+                .temp { color: #D7FF64; /* Radiate */ }
+                .humidity { color: #46EBE1; /* Electron */ }
                 .unit { font-size: 30px; }
-                .info { 
+                .info {
                     margin-top: 30px;
                     font-size: 14px;
-                    color: #777;
+                    color: #CDCBFB; /* Nebula */
                 }
                 .fahrenheit {
                     font-size: 24px;
-                    color: #888;
+                    color: #E1DF99; /* Sandstone */
                     margin-top: -20px;
                     margin-bottom: 30px;
                 }
