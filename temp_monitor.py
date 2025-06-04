@@ -1,11 +1,17 @@
 from sense_hat import SenseHat
-from flask import Flask, jsonify, render_template_string, send_file
+from flask import Flask, jsonify, render_template_string, send_file, request, abort
 import time
 import logging
 import threading
 import statistics
 import base64
 import os
+import secrets
+import functools
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +35,46 @@ current_temp = 0
 current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
+
+# Get bearer token from environment or generate a new one if not present
+BEARER_TOKEN = os.getenv('BEARER_TOKEN')
+if not BEARER_TOKEN:
+    # Generate a new token if one doesn't exist
+    BEARER_TOKEN = secrets.token_hex(32)  # 64 character hex string
+    logging.info("Generated new bearer token")
+    
+    # Save the token to .env file
+    try:
+        with open('.env', 'w') as env_file:
+            env_file.write(f"BEARER_TOKEN={BEARER_TOKEN}\n")
+        logging.info("Saved bearer token to .env file")
+        print(f"New bearer token generated and saved to .env file: {BEARER_TOKEN}")
+    except Exception as e:
+        logging.error(f"Failed to save bearer token to .env file: {e}")
+        print(f"WARNING: Generated bearer token but failed to save to .env file: {e}")
+        print(f"Please manually add this token to your .env file: BEARER_TOKEN={BEARER_TOKEN}")
+else:
+    logging.info("Using bearer token from .env file")
+
+def require_token(f):
+    """Decorator to require bearer token authentication for API endpoints"""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        
+        # Check if Authorization header exists and has the correct format
+        if not auth_header or not auth_header.startswith('Bearer '):
+            logging.warning(f"API access attempt without valid Authorization header from {request.remote_addr}")
+            abort(401, description="Authorization header with Bearer token required")
+        
+        # Extract and validate the token
+        token = auth_header.split(' ')[1]
+        if token != BEARER_TOKEN:
+            logging.warning(f"API access attempt with invalid token from {request.remote_addr}")
+            abort(403, description="Invalid bearer token")
+            
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Try to read and encode the image file
 image_base64 = ""
@@ -220,6 +266,7 @@ def favicon():
         return "", 404  # Return empty response with 404 status code if favicon not found
 
 @app.route('/api/temp')
+@require_token
 def api_temp():
     """API endpoint returning temperature data as JSON"""
     fahrenheit = round((current_temp * 9/5) + 32, 1)
@@ -231,6 +278,7 @@ def api_temp():
     })
 
 @app.route('/api/raw')
+@require_token
 def api_raw():
     """API endpoint for debugging, showing raw vs compensated temperature"""
     cpu_temp = get_cpu_temperature()
@@ -241,6 +289,46 @@ def api_raw():
         'compensated_temperature': current_temp,
         'humidity': current_humidity,
         'timestamp': last_updated
+    })
+
+# Add a token generation endpoint (protected by existing token)
+@app.route('/api/generate-token', methods=['POST'])
+@require_token
+def generate_new_token():
+    """Generate a new bearer token (requires existing token to access)"""
+    global BEARER_TOKEN
+    
+    # Generate new token
+    new_token = secrets.token_hex(32)
+    
+    # Save to .env file
+    try:
+        with open('.env', 'w') as env_file:
+            env_file.write(f"BEARER_TOKEN={new_token}\n")
+        
+        # Update the global token
+        BEARER_TOKEN = new_token
+        logging.info("Generated and saved new bearer token")
+        
+        return jsonify({
+            'message': 'New bearer token generated successfully',
+            'token': new_token
+        })
+    except Exception as e:
+        logging.error(f"Failed to save new bearer token: {e}")
+        return jsonify({
+            'error': 'Failed to save new token',
+            'details': str(e)
+        }), 500
+
+# Add an endpoint to check if token is valid
+@app.route('/api/verify-token', methods=['GET'])
+@require_token
+def verify_token():
+    """Verify if the provided token is valid"""
+    return jsonify({
+        'valid': True,
+        'message': 'Token is valid'
     })
 
 if __name__ == '__main__':

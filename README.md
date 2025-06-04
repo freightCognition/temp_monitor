@@ -169,4 +169,65 @@ The web interface uses an embedded HTML template with CSS. You can customize the
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. 
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+# Temperature Monitor API with Bearer Token Authentication
+
+This application monitors temperature and humidity using a Raspberry Pi with Sense HAT and provides a web interface and API endpoints to access the data.
+
+## API Security
+
+The API endpoints are protected with Bearer Token authentication. You need to include a valid token in the `Authorization` header to access the API.
+
+## Getting Started
+
+1. Install the required dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Generate a bearer token:
+   ```
+   python generate_token.py
+   ```
+   This will create a secure random token and save it to the `.env` file.
+
+3. Start the application:
+   ```
+   python temp_monitor.py
+   ```
+
+## Using the API
+
+To access the API endpoints, include the bearer token in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://your-server:8080/api/temp
+```
+
+### Available Endpoints
+
+- `/api/temp` - Get current temperature and humidity data
+- `/api/raw` - Get raw temperature data (including CPU temperature)
+- `/api/verify-token` - Verify if your token is valid
+- `/api/generate-token` - Generate a new token (requires existing valid token)
+
+## Regenerating Tokens
+
+You can regenerate the token in two ways:
+
+1. Using the script:
+   ```
+   python generate_token.py
+   ```
+
+2. Using the API (requires existing valid token):
+   ```
+   curl -X POST -H "Authorization: Bearer YOUR_CURRENT_TOKEN" http://your-server:8080/api/generate-token
+   ```
+
+## Security Notes
+
+- Keep your bearer token secure and don't share it publicly
+- The token is stored in the `.env` file, which should be kept private
+- Consider regenerating the token periodically for enhanced security 
