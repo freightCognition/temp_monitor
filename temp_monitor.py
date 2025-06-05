@@ -98,7 +98,7 @@ def get_cpu_temperature():
         return temp
     except Exception as e:
         logging.error(f"Failed to get CPU temperature: {e}")
-        return 0
+        return None
 
 def get_compensated_temperature():
     """Get temperature from the Sense HAT with CPU compensation"""
@@ -125,7 +125,10 @@ def get_compensated_temperature():
     # This formula assumes the CPU is significantly warmer than the ambient temperature
     # The factor of 0.7 is an approximation that should be calibrated
     factor = 0.7
-    comp_temp = raw_temp - ((cpu_temp - raw_temp) * factor)
+    if cpu_temp is not None:
+        comp_temp = raw_temp - ((cpu_temp - raw_temp) * factor)
+    else:
+        comp_temp = raw_temp
     
     return round(comp_temp, 1)
 
@@ -155,7 +158,11 @@ def update_sensor_data():
             current_humidity = get_humidity()
             last_updated = time.strftime("%Y-%m-%d %H:%M:%S")
             
-            logging.info(f"Temperature: {current_temp}°C, Humidity: {current_humidity}%, CPU Temp: {get_cpu_temperature()}°C")
+            cpu_temp_val = get_cpu_temperature()
+            cpu_temp_display = f"{cpu_temp_val}°C" if cpu_temp_val is not None else "N/A"
+            logging.info(
+                f"Temperature: {current_temp}°C, Humidity: {current_humidity}%, CPU Temp: {cpu_temp_display}"
+            )
             
             # Display temperature on Sense HAT LED matrix
             temp_f = round((current_temp * 9/5) + 32, 1)
@@ -284,7 +291,7 @@ def api_raw():
     cpu_temp = get_cpu_temperature()
     raw_temp = sense.get_temperature()
     return jsonify({
-        'cpu_temperature': round(cpu_temp, 1),
+        'cpu_temperature': round(cpu_temp, 1) if cpu_temp is not None else None,
         'raw_temperature': round(raw_temp, 1),
         'compensated_temperature': current_temp,
         'humidity': current_humidity,
