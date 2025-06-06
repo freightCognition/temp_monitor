@@ -1,3 +1,9 @@
-flask==2.3.3
+flask==3.0.0
 sense-hat==2.6.0
-python-dotenv==1.0.0 
+python-dotenv==1.0.0
+taipy==3.1.1
+taipy-gui==3.1.1
+taipy-core==3.1.1
+pandas==2.1.4
+numpy==1.24.3
+plotly==5.17.0

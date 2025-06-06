@@ -1,0 +1,231 @@
+/* Custom CSS for Temperature Monitor Dashboard */
+
+/* Define Color Palette as CSS Variables */
+:root {
+    --galaxy: #261230;     /* Primary dark backgrounds */
+    --space: #30173D;      /* Secondary dark backgrounds, cards */
+    --nebula: #CDCBFB;     /* Light text/borders, secondary text */
+    --rock: #78876E;       /* Neutral elements, secondary buttons */
+    --crater: #F0DFDF;     /* Light backgrounds (not used much in dark theme) */
+
+    --flare: #6340AC;      /* Primary buttons/links */
+    --electron: #46EBE1;   /* Success states/highlights, Temperature charts */
+    --cosmic: #DE5FE9;     /* Warning states, Humidity charts */
+    --sandstone: #E1DF99;  /* Info states */
+    --comet: #6F5D6F;      /* Muted text, chart gridlines */
+    --lunar: #FBF2FC;      /* Card backgrounds (alternative, if --space is too dark) */
+    --radiate: #D7FF64;    /* Success indicators */
+    --starlight: #F4F4F1;  /* Primary light text */
+
+    /* Taipy specific overrides might require more specific selectors */
+    --taipy-primary-color: var(--flare);
+    --taipy-secondary-color: var(--electron);
+    --taipy-success-color: var(--radiate);
+    --taipy-warning-color: var(--cosmic);
+    --taipy-error-color: #FF5252; /* Example error color */
+
+    --taipy-font-family: 'Arial', sans-serif; /* Example font */
+}
+
+/* --- Global Styles --- */
+body {
+    background-color: var(--galaxy);
+    color: var(--starlight);
+    font-family: var(--taipy-font-family);
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--starlight);
+    font-weight: 300; /* Lighter font weight for headings */
+}
+h1 { font-size: 2.2em; margin-bottom: 0.7em;}
+h2 { font-size: 1.8em; margin-bottom: 0.6em;}
+h3 { font-size: 1.4em; margin-bottom: 0.5em;}
+
+a {
+    color: var(--flare);
+    text-decoration: none;
+}
+a:hover {
+    color: var(--electron);
+    text-decoration: underline;
+}
+
+/* --- Taipy Specific Component Styling --- */
+
+/* Main layout container for pages */
+.taipy-page, .main-content-wrapper { /* Adjust selector based on Taipy version/structure */
+    padding: 20px;
+    background-color: var(--galaxy); /* Ensure page background is consistent */
+}
+
+/* Taipy Markdown part styling */
+.taipy-markdown {
+    background-color: transparent; /* Ensure markdown parts don't have conflicting backgrounds */
+}
+.taipy-markdown h1, .taipy-markdown h2, .taipy-markdown h3 {
+    color: var(--starlight); /* Titles within markdown */
+}
+
+
+/* Cards */
+.card-bg, .taipy-card { /* General card class, and Taipy's default if applicable */
+    background-color: var(--space) !important; /* Use !important if Taipy's default styles are too strong */
+    border: 1px solid var(--comet);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: var(--starlight);
+    margin-bottom: 20px; /* Space below cards */
+}
+.taipy-card h3 { /* Titles inside cards */
+    color: var(--nebula);
+}
+
+
+/* KPI Styling (from overview.py, now centralized) */
+.kpi_container {
+    gap: 20px;
+    margin-bottom: 20px;
+    display: flex; /* Using flex for alignment */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    justify-content: space-around; /* Distribute space */
+}
+.kpi_container .taipy-card { /* Target cards within the KPI container */
+    flex: 1; /* Allow cards to grow and shrink */
+    min-width: 200px; /* Minimum width for KPI cards */
+    text-align: center;
+}
+.kpi-value {
+    font-size: 2.8em; /* Slightly larger */
+    font-weight: bold;
+    color: var(--starlight);
+    display: block; /* Ensure it takes its own line */
+    margin-bottom: 5px;
+}
+.kpi-unit {
+    font-size: 1em;
+    color: var(--nebula);
+}
+
+/* Chart Containers */
+.chart_container {
+    background-color: var(--space);
+    padding: 20px;
+    border-radius: 8px;
+    margin-top: 20px;
+    border: 1px solid var(--comet);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.chart_container h2, .chart_container h3 { /* Titles above charts */
+    color: var(--nebula);
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+
+/* Buttons */
+.taipy-button, button {
+    background-color: var(--flare) !important;
+    color: var(--starlight) !important;
+    border: none !important;
+    padding: 10px 20px !important;
+    border-radius: 5px !important;
+    cursor: pointer !important;
+    font-weight: bold !important;
+    transition: background-color 0.3s ease !important;
+}
+.taipy-button:hover, button:hover {
+    background-color: var(--electron) !important;
+    color: var(--galaxy) !important;
+}
+
+/* Secondary button style */
+.taipy-button.secondary, button.secondary {
+    background-color: var(--rock) !important;
+}
+.taipy-button.secondary:hover, button.secondary:hover {
+    background-color: var(--comet) !important;
+}
+
+
+/* Selectors / Dropdowns */
+.taipy-selector select, .taipy-dropdown select { /* Adjust selector if needed */
+    background-color: var(--space);
+    color: var(--starlight);
+    border: 1px solid var(--nebula);
+    border-radius: 4px;
+    padding: 8px;
+}
+.taipy-selector span, .taipy-dropdown span { /* Label for selector */
+    color: var(--nebula);
+    margin-right: 10px;
+}
+
+/* Navbar styling (placeholder, Taipy's navbar might need specific selectors) */
+.taipy-navbar, .navbar { /* Replace with actual Taipy navbar selector */
+    background-color: var(--space);
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--comet);
+}
+.taipy-navbar a, .navbar a {
+    color: var(--nebula);
+    margin-right: 15px;
+    text-decoration: none;
+    font-size: 1.1em;
+}
+.taipy-navbar a:hover, .navbar a:hover {
+    color: var(--electron);
+}
+
+
+/* Taipy Table styling (if used later) */
+.taipy-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.taipy-table th, .taipy-table td {
+    border: 1px solid var(--comet);
+    padding: 8px;
+    text-align: left;
+    color: var(--starlight);
+}
+.taipy-table th {
+    background-color: var(--flare); /* Header background */
+    color: var(--starlight);
+}
+.taipy-table tr:nth-child(even) {
+    background-color: var(--space); /* Slightly different for row striping */
+}
+.taipy-table tr:hover {
+    background-color: var(--comet);
+}
+
+/* Notifications / Toasts */
+/* Taipy notifications might have their own classes like .taipy-toast */
+.taipy-toast-success {
+    background-color: var(--radiate) !important;
+    color: var(--galaxy) !important;
+}
+.taipy-toast-info {
+    background-color: var(--sandstone) !important;
+    color: var(--galaxy) !important;
+}
+.taipy-toast-warning {
+    background-color: var(--cosmic) !important; /* Cosmic is pinkish, good for warning */
+    color: var(--starlight) !important;
+}
+.taipy-toast-error {
+    background-color: #B00020 !important; /* A strong red for error */
+    color: var(--starlight) !important;
+}
+
+/* Ensure Plotly chart backgrounds are transparent so CSS takes over if needed,
+   or that they use the CSS variables if configured through Python.
+   The Python config for charts (COMMON_CHART_LAYOUT) should already handle this.
+*/
+.js-plotly-plot .plotly {
+    background-color: transparent !important; /* Example if needed */
+}
