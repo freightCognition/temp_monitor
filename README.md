@@ -1,4 +1,5 @@
-# Server Room Environmental Monitor
+# Server Room Temp Monitor
+
 
 A lightweight environmental monitoring system for server rooms or any space where temperature and humidity tracking is critical. Built on a Raspberry Pi Zero 2 W with a Sense HAT.
 
@@ -28,11 +29,21 @@ A lightweight environmental monitoring system for server rooms or any space wher
 ```bash
 # Install required system packages
 sudo apt-get update
+
 sudo apt-get install -y python3-pip python3-sense-hat
+
+
 
 # Create a virtual environment (optional but recommended)
 python3 -m venv venv
+
+
+
 source venv/bin/activate
+
+
+
+
 
 # Install Python dependencies
 pip install flask
@@ -44,6 +55,11 @@ pip install flask
    ```bash
    git clone https://github.com/yourusername/temp_monitor.git
    cd temp_monitor
+
+
+
+
+
    ```
 
 2. Configure log file location:
@@ -60,6 +76,7 @@ pip install flask
    Place your image file at the location specified in the code:
    ```python
    with open("/home/yourusername/logo.gif", "rb") as image_file:
+
    ```
 
 4. Set up as a service (for automatic startup):
@@ -231,3 +248,11 @@ You can regenerate the token in two ways:
 - Keep your bearer token secure and don't share it publicly
 - The token is stored in the `.env` file, which should be kept private
 - Consider regenerating the token periodically for enhanced security 
+
+
+
+
+
+
+
+
