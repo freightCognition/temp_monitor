@@ -1,0 +1,64 @@
+# Exclude development files
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+!.env.example
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Documentation files (README will be included in production)
+*.md
+!README.md
+
+# Development Docker files
+docker-compose.override.yml
+docker-compose.dev.yml
+
+# Testing files
+tests/
+test_*.py
+*_test.py
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

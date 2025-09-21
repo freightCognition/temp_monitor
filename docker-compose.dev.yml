@@ -1,0 +1,63 @@
+# Development Docker Compose Configuration
+version: '3.8'
+
+services:
+  temperature-monitor-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: temp-monitor-dev
+    ports:
+      - "8080:5000"
+    environment:
+      - ENVIRONMENT=development
+      - RUNNING_IN_DOCKER=true
+      - USE_MOCK_SENSORS=true
+      - HOST=0.0.0.0
+      - PORT=5000
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - SAMPLING_INTERVAL=10.0
+      - ENABLE_CORS=true
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_PER_MINUTE=120
+      - HEALTH_CHECK_ENABLED=true
+      - BEARER_TOKEN=dev_token_12345678901234567890123456789012
+    volumes:
+      # Mount source code for development (hot reload)
+      - .:/app:ro
+      - dev_logs:/app/logs
+      - ./assets:/app/assets
+    networks:
+      - temp_monitor_dev_network
+    labels:
+      - "dev.service=temperature-monitor"
+      - "dev.environment=development"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # Restart policy for development
+    restart: "no"
+    # Development specific command can be overridden
+    command: ["python", "-u", "temp_monitor.py"]
+
+  # Optional: Development database for testing
+  # redis-dev:
+  #   image: redis:alpine
+  #   container_name: temp-monitor-redis-dev
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - temp_monitor_dev_network
+
+volumes:
+  dev_logs:
+    driver: local
+
+networks:
+  temp_monitor_dev_network:
+    driver: bridge

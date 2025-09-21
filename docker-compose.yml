@@ -1,0 +1,64 @@
+# Production Docker Compose Configuration
+version: '3.8'
+
+services:
+  temperature-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: temp-monitor-prod
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - ENVIRONMENT=production
+      - RUNNING_IN_DOCKER=true
+      - USE_MOCK_SENSORS=true
+      - HOST=0.0.0.0
+      - PORT=5000
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SAMPLING_INTERVAL=60.0
+      - ENABLE_CORS=false
+      - RATE_LIMIT_PER_MINUTE=60
+      - HEALTH_CHECK_ENABLED=true
+      # Note: BEARER_TOKEN should be set via .env file or externally
+    volumes:
+      - temp_logs:/app/logs
+      - temp_assets:/app/assets
+      # Mount .env file if it exists
+      - ./.env:/app/.env:ro
+    networks:
+      - temp_monitor_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.temp-monitor.rule=PathPrefix(`/`)"
+      - "traefik.http.services.temp-monitor.loadbalancer.server.port=5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add monitoring with Prometheus metrics
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: temp-monitor-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  #   networks:
+  #     - temp_monitor_network
+
+volumes:
+  temp_logs:
+    driver: local
+  temp_assets:
+    driver: local
+
+networks:
+  temp_monitor_network:
+    driver: bridge
