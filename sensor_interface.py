@@ -7,6 +7,7 @@ import os
 import time
 import logging
 import random
+import math
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
@@ -150,7 +151,7 @@ class MockSensorInterface(SensorInterface):
         """Generate mock temperature with realistic variation."""
         # Simulate daily temperature cycle and random variation
         elapsed = time.time() - self._start_time
-        daily_cycle = 2.0 * (0.5 + 0.5 * (time.sin(elapsed / 3600.0 * 2 * 3.14159 / 24)))  # 24-hour cycle
+        daily_cycle = 2.0 * (0.5 + 0.5 * (math.sin(elapsed / 3600.0 * 2 * math.pi / 24)))  # 24-hour cycle
         random_variation = random.uniform(-0.5, 0.5)
         return self._base_temp + daily_cycle + random_variation
     
@@ -158,7 +159,7 @@ class MockSensorInterface(SensorInterface):
         """Generate mock humidity with realistic variation."""
         # Simulate humidity changes with random variation
         elapsed = time.time() - self._start_time
-        slow_variation = 10.0 * (0.5 + 0.5 * (time.sin(elapsed / 7200.0)))  # 2-hour cycle
+        slow_variation = 10.0 * (0.5 + 0.5 * (math.sin(elapsed / 7200.0)))  # 2-hour cycle
         random_variation = random.uniform(-2.0, 2.0)
         humidity = self._base_humidity + slow_variation + random_variation
         return max(20.0, min(80.0, humidity))  # Clamp between 20-80%
