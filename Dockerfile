@@ -1,8 +1,9 @@
 FROM python:3.9-slim-bullseye
 
-# Install system dependencies for Sense HAT
+# Install system dependencies for I2C hardware access
+# Note: sense-hat Python package is installed via pip from requirements.txt
 RUN apt-get update && \
-    apt-get install -y python3-sense-hat i2c-tools && \
+    apt-get install -y i2c-tools && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
