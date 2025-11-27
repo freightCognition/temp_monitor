@@ -15,11 +15,23 @@ load_dotenv()
 
 # Configure logging
 log_file = os.getenv('LOG_FILE', 'temp_monitor.log')
-logging.basicConfig(
-    filename=log_file,
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+
+# Validate and prepare log file path
+log_dir = os.path.dirname(log_file)
+if log_dir:  # Only validate if directory is specified (not relative path in current dir)
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to create log directory '{log_dir}': {e}")
+
+try:
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+except Exception as e:
+    raise RuntimeError(f"Failed to configure logging with file '{log_file}': {e}")
 
 # Initialize SenseHat
 try:
