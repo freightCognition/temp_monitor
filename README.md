@@ -192,6 +192,78 @@ The application uses environment variables for configuration. Create a `.env` fi
 
 All paths can be absolute or relative. The application will create the log directory if it doesn't exist.
 
+## Docker Deployment
+
+The application can be run as a Docker container, which simplifies deployment and ensures consistent environments across different systems.
+
+### Prerequisites
+
+- Docker and Docker Compose installed on your Raspberry Pi
+- I2C enabled on the Raspberry Pi (use `sudo raspi-config`)
+
+### Building the Docker Image
+
+```bash
+docker build -t temp-monitor .
+```
+
+### Running with Docker Compose
+
+The easiest way to run the application is using Docker Compose:
+
+```bash
+# Create required directories and copy assets
+mkdir -p logs assets
+cp My-img8bit-1com-Effect.gif assets/logo.gif
+cp temp-favicon.ico assets/favicon.ico
+
+# Start the container
+docker-compose up -d
+```
+
+The application will be available at `http://[raspberry-pi-ip]:8080`.
+
+### Generating Bearer Token in Container
+
+To generate a new bearer token inside the running container:
+
+```bash
+docker-compose exec temp-monitor python generate_token.py
+```
+
+### Viewing Logs
+
+```bash
+# View container logs
+docker-compose logs -f temp-monitor
+
+# View application logs
+cat logs/temp_monitor.log
+```
+
+### Stopping the Container
+
+```bash
+docker-compose down
+```
+
+### Important Notes
+
+- **Privileged Mode**: The container runs in privileged mode to access the Sense HAT hardware via I2C. This is required for hardware sensor access.
+- **Device Access**: The container needs access to `/dev/i2c-1` for Sense HAT communication and `/sys` (read-only) for CPU temperature readings.
+- **ARM Architecture**: This application is designed for Raspberry Pi (ARM architecture). The Docker image will work on armv7l (Pi 3/4) and aarch64 (Pi 4 64-bit) architectures.
+- **Volume Mounts**: The `logs/` and `assets/` directories are mounted as volumes to persist data and allow easy customization of the logo and favicon.
+- **Environment File**: The `.env` file is mounted into the container to provide the bearer token and other configuration.
+
+### Docker Compose Configuration
+
+The `docker-compose.yml` file configures:
+- Port mapping (8080:8080)
+- Volume mounts for logs, assets, and environment file
+- Device access for I2C hardware
+- Read-only access to `/sys` for CPU temperature
+- Automatic restart policy
+
 ## Troubleshooting
 
 - **Sense HAT not detected**: Ensure the HAT is properly connected and that I2C is enabled (use `sudo raspi-config`)
@@ -199,6 +271,8 @@ All paths can be absolute or relative. The application will create the log direc
 - **Inaccurate temperature**: Adjust the compensation factor in the `get_compensated_temperature()` function
 - **Favicon not displaying**: Verify the `FAVICON_PATH` points to an existing file
 - **Log file creation fails**: Ensure the directory specified in `LOG_FILE` exists or that the user has permission to create it
+- **Docker container fails to start**: Ensure I2C is enabled and the Sense HAT is properly connected. Check container logs with `docker-compose logs`.
+- **Permission denied errors in Docker**: The container requires privileged mode for hardware access. Ensure `privileged: true` is set in docker-compose.yml.
 
 ## License
 
@@ -263,7 +337,7 @@ You can regenerate the token in two ways:
 
 - Keep your bearer token secure and don't share it publicly
 - The token is stored in the `.env` file, which should be kept private
-- Consider regenerating the token periodically for enhanced security 
+- Consider regenerating the token periodically for enhanced security  
 
 
 

@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  temp-monitor:
+    build: .
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/app/logs
+      - ./assets:/app/assets
+      - ./.env:/app/.env
+      - /sys:/sys:ro
+    devices:
+      - /dev/i2c-1:/dev/i2c-1
+    restart: unless-stopped
+    environment:
+      - LOG_FILE=/app/logs/temp_monitor.log
+      - LOGO_PATH=/app/assets/logo.gif
+      - FAVICON_PATH=/app/assets/favicon.ico
