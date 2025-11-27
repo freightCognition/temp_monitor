@@ -5,11 +5,24 @@ RUN apt-get update && \
     apt-get install -y \
         python3-sense-hat \
         libatlas-base-dev \
-        i2c-tools && \
+        i2c-tools \
+        librtimulib-dev \
+        librtimulib7 \
+        python3-dev \
+        build-essential \
+        cmake \
+        git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Install RTIMULib Python bindings from source
+RUN git clone https://github.com/RPi-Distro/RTIMULib.git /tmp/RTIMULib && \
+    cd /tmp/RTIMULib/Linux/python && \
+    python setup.py install && \
+    cd / && \
+    rm -rf /tmp/RTIMULib
 
 # Copy requirements and install Python packages
 COPY requirements.txt .
