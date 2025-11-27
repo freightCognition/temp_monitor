@@ -115,6 +115,100 @@ pip install flask
    sudo systemctl start temp_monitor.service
    ```
 
+## Docker Deployment
+
+The application can be deployed as a Docker container, making it easier to manage dependencies and deployment.
+
+### Prerequisites
+
+- Docker and Docker Compose installed on your Raspberry Pi
+- Raspberry Pi with ARM architecture (armv7l or aarch64)
+- Sense HAT hardware properly connected
+
+### Preparing for Docker Deployment
+
+1. **Create necessary directories:**
+   ```bash
+   mkdir -p logs assets
+   ```
+
+2. **Copy your assets to the assets directory:**
+   ```bash
+   cp My-img8bit-1com-Effect.gif assets/logo.gif
+   cp temp-favicon.ico assets/favicon.ico
+   ```
+
+3. **Create a .env file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+   The bearer token will be auto-generated on first run, or you can generate it manually (see below).
+
+### Building and Running with Docker Compose
+
+1. **Build the Docker image:**
+   ```bash
+   docker-compose build
+   ```
+
+2. **Start the container:**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **View logs:**
+   ```bash
+   docker-compose logs -f
+   ```
+
+4. **Stop the container:**
+   ```bash
+   docker-compose down
+   ```
+
+### Generating Bearer Token in Container
+
+To generate or regenerate the bearer token inside the container:
+
+```bash
+docker-compose exec temp-monitor python generate_token.py
+```
+
+The token will be saved to the `.env` file in your project directory (which is mounted as a volume).
+
+### Building Docker Image Manually
+
+If you prefer to build and run without docker-compose:
+
+```bash
+# Build the image
+docker build -t temp-monitor .
+
+# Run the container
+docker run -d \
+  --name temp-monitor \
+  --privileged \
+  -p 8080:8080 \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/assets:/app/assets \
+  -v $(pwd)/.env:/app/.env \
+  -v /sys:/sys:ro \
+  --device /dev/i2c-1:/dev/i2c-1 \
+  -e LOG_FILE=/app/logs/temp_monitor.log \
+  -e LOGO_PATH=/app/assets/logo.gif \
+  -e FAVICON_PATH=/app/assets/favicon.ico \
+  temp-monitor
+```
+
+### Important Docker Notes
+
+- **Privileged Mode:** The container requires privileged mode to access the I2C interface and hardware sensors on the Sense HAT
+- **ARM Architecture:** This application is designed for ARM-based Raspberry Pi. The Python base image will automatically use the appropriate ARM variant
+- **Device Access:** The container needs access to `/dev/i2c-1` for Sense HAT communication and `/sys` (read-only) for CPU temperature readings
+- **Persistent Data:** Logs and the `.env` file are stored in mounted volumes, so they persist across container restarts
+- **Auto-restart:** The docker-compose configuration includes `restart: unless-stopped` to automatically restart the container if it crashes or after system reboot
+
 ## Usage
 
 ### Web Dashboard
