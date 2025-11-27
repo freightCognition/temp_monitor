@@ -103,6 +103,8 @@ except Exception as e:
 
 # Path to favicon file
 favicon_path = os.getenv('FAVICON_PATH', 'temp-favicon.ico')
+if not os.path.exists(favicon_path) or not os.path.isfile(favicon_path):
+    logging.warning(f"Favicon file not found or not accessible at '{favicon_path}' - favicon requests will return 404")
 
 def get_cpu_temperature():
     """Get the temperature of the CPU for compensation"""
