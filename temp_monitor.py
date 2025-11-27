@@ -14,8 +14,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure logging
+log_file = os.getenv('LOG_FILE', 'temp_monitor.log')
 logging.basicConfig(
-    filename='/home/fakebizprez/temp_monitor.log',
+    filename=log_file,
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -78,8 +79,9 @@ def require_token(f):
 
 # Try to read and encode the image file
 image_base64 = ""
+logo_path = os.getenv('LOGO_PATH', 'My-img8bit-1com-Effect.gif')
 try:
-    with open("/home/fakebizprez/My-img8bit-1com-Effect.gif", "rb") as image_file:
+    with open(logo_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
         image_base64 = f"data:image/gif;base64,{encoded_string}"
         logging.info("Successfully loaded and encoded image")
@@ -88,7 +90,7 @@ except Exception as e:
     image_base64 = ""  # Keep empty if failed
 
 # Path to favicon file
-favicon_path = "/home/fakebizprez/temp-favicon.ico"
+favicon_path = os.getenv('FAVICON_PATH', 'temp-favicon.ico')
 
 def get_cpu_temperature():
     """Get the temperature of the CPU for compensation"""
