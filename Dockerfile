@@ -3,11 +3,8 @@ FROM python:3.9-slim-bullseye
 # Install system dependencies for Sense HAT
 RUN apt-get update && \
     apt-get install -y \
-        python3-sense-hat \
         libatlas-base-dev \
         i2c-tools \
-        librtimulib-dev \
-        librtimulib7 \
         python3-dev \
         build-essential \
         cmake \
