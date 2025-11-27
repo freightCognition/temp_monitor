@@ -11,6 +11,9 @@ services:
       - /sys:/sys:ro
     devices:
       - /dev/i2c-1:/dev/i2c-1
+      - /dev/mem:/dev/mem
+    cap_add:
+      - SYS_RAWIO
     restart: unless-stopped
     environment:
       - LOG_FILE=/app/logs/temp_monitor.log

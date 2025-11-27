@@ -1,12 +1,10 @@
-FROM debian:bullseye-slim
+FROM python:3.9-slim
 
-# Install system Python, Sense HAT stack, and I2C tools
-# Using system Python ensures apt-installed packages (sense-hat, RTIMU) are visible
+# Install Sense HAT dependencies including RTIMU and required libraries
 RUN apt-get update && \
     apt-get install -y \
-      python3 \
-      python3-pip \
       python3-sense-hat \
+      libatlas-base-dev \
       i2c-tools && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
