@@ -62,22 +62,29 @@ pip install flask
 
    ```
 
-2. Configure log file location:
-   Edit the `temp_monitor.py` file to update the log file path if needed:
-   ```python
-   logging.basicConfig(
-       filename='/home/yourusername/temp_monitor.log',
-       level=logging.INFO,
-       format='%(asctime)s - %(levelname)s - %(message)s'
-   )
+2. Configure environment variables:
+   Copy `.env.example` to `.env` and customize paths as needed:
+   ```bash
+   cp .env.example .env
    ```
 
-3. (Optional) Add a custom logo:
-   Place your image file at the location specified in the code:
-   ```python
-   with open("/home/yourusername/logo.gif", "rb") as image_file:
-
+   Edit `.env` to set your paths:
    ```
+   # Log file path (absolute or relative)
+   LOG_FILE=/home/yourusername/temp_monitor.log
+
+   # Logo image path (absolute or relative)
+   LOGO_PATH=/path/to/My-img8bit-1com-Effect.gif
+
+   # Favicon path (absolute or relative)
+   FAVICON_PATH=/path/to/temp-favicon.ico
+   ```
+
+3. Generate a bearer token:
+   ```bash
+   python generate_token.py
+   ```
+   This will create a secure token and save it to `.env`.
 
 4. Set up as a service (for automatic startup):
    Create a systemd service file:
@@ -174,11 +181,24 @@ sampling_interval = 60  # seconds between temperature updates
 
 The web interface uses an embedded HTML template with CSS. You can customize the appearance by modifying the HTML template in the `index()` function.
 
+## Configuration
+
+The application uses environment variables for configuration. Create a `.env` file (copy from `.env.example`) with these settings:
+
+- **LOG_FILE**: Path to the log file (defaults to `temp_monitor.log`)
+- **LOGO_PATH**: Path to the logo image for the dashboard (defaults to `My-img8bit-1com-Effect.gif`)
+- **FAVICON_PATH**: Path to the favicon file (defaults to `temp-favicon.ico`)
+- **BEARER_TOKEN**: API authentication token (auto-generated if not provided)
+
+All paths can be absolute or relative. The application will create the log directory if it doesn't exist.
+
 ## Troubleshooting
 
 - **Sense HAT not detected**: Ensure the HAT is properly connected and that I2C is enabled (use `sudo raspi-config`)
 - **Web interface not accessible**: Check that port 8080 is not blocked by a firewall
 - **Inaccurate temperature**: Adjust the compensation factor in the `get_compensated_temperature()` function
+- **Favicon not displaying**: Verify the `FAVICON_PATH` points to an existing file
+- **Log file creation fails**: Ensure the directory specified in `LOG_FILE` exists or that the user has permission to create it
 
 ## License
 
@@ -199,18 +219,14 @@ The API endpoints are protected with Bearer Token authentication. You need to in
 ## Getting Started
 
 1. Install the required dependencies:
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
-2. Generate a bearer token:
-   ```
-   python generate_token.py
-   ```
-   This will create a secure random token and save it to the `.env` file.
+2. Configure your environment (see Setup section above for details)
 
 3. Start the application:
-   ```
+   ```bash
    python temp_monitor.py
    ```
 

@@ -14,12 +14,14 @@ This is a **Server Room Temperature Monitor** built on Raspberry Pi with Sense H
 
 ```
 temp_monitor/
-├── temp_monitor.py           # Main Flask application (352 lines)
+├── temp_monitor.py           # Main Flask application (367 lines)
 ├── generate_token.py         # Token generation utility (56 lines)
 ├── requirements.txt          # Python dependencies
-├── README.md                 # User-facing documentation
+├── .env.example             # Example environment variables
 ├── .env                      # Environment variables (gitignored)
 ├── .gitignore               # Git ignore rules
+├── README.md                 # User-facing documentation
+├── CLAUDE.md                # AI assistant guide
 ├── assets/                   # Web assets (images, favicons)
 │   ├── temp-favicon.png
 │   └── temp*.webp           # Various temperature-related images
@@ -30,22 +32,23 @@ temp_monitor/
 ### Core Files
 
 #### `temp_monitor.py` (Main Application)
-- **Lines 1-30:** Imports, initialization, logging configuration
-- **Lines 31-37:** Flask app setup and global variables
-- **Lines 39-58:** Bearer token initialization from environment
-- **Lines 59-77:** `require_token()` decorator for API authentication
-- **Lines 79-91:** Image/asset loading with base64 encoding
-- **Lines 93-101:** `get_cpu_temperature()` - reads from `/sys/class/thermal/thermal_zone0/temp`
-- **Lines 103-133:** `get_compensated_temperature()` - temperature reading with CPU heat compensation
-- **Lines 135-149:** `get_humidity()` - humidity sensor reading with averaging
-- **Lines 151-176:** `update_sensor_data()` - background thread for continuous monitoring
-- **Lines 178-264:** `index()` - web dashboard route with HTML template
-- **Lines 266-273:** `favicon()` - favicon serving endpoint
-- **Lines 275-285:** `api_temp()` - protected API endpoint for temperature data
-- **Lines 287-299:** `api_raw()` - protected debugging endpoint for raw sensor data
-- **Lines 301-329:** `generate_new_token()` - API endpoint to regenerate bearer tokens
-- **Lines 331-339:** `verify_token()` - token validation endpoint
-- **Lines 341-351:** Main execution block - starts sensor thread and Flask server
+- **Lines 1-14:** Imports and environment variable loading
+- **Lines 16-34:** Logging configuration with directory validation
+- **Lines 36-50:** Flask app setup and global variables
+- **Lines 52-70:** Bearer token initialization from environment
+- **Lines 72-90:** `require_token()` decorator for API authentication
+- **Lines 92-107:** Image/asset loading with base64 encoding and favicon validation
+- **Lines 109-117:** `get_cpu_temperature()` - reads from `/sys/class/thermal/thermal_zone0/temp`
+- **Lines 119-149:** `get_compensated_temperature()` - temperature reading with CPU heat compensation
+- **Lines 151-165:** `get_humidity()` - humidity sensor reading with averaging
+- **Lines 167-192:** `update_sensor_data()` - background thread for continuous monitoring
+- **Lines 194-280:** `index()` - web dashboard route with HTML template
+- **Lines 282-289:** `favicon()` - favicon serving endpoint with fallback handling
+- **Lines 291-301:** `api_temp()` - protected API endpoint for temperature data
+- **Lines 303-315:** `api_raw()` - protected debugging endpoint for raw sensor data
+- **Lines 317-345:** `generate_new_token()` - API endpoint to regenerate bearer tokens
+- **Lines 347-355:** `verify_token()` - token validation endpoint
+- **Lines 357-367:** Main execution block - starts sensor thread and Flask server
 
 #### `generate_token.py` (Token Management)
 - Standalone utility script to generate secure bearer tokens
@@ -58,7 +61,7 @@ temp_monitor/
 ## Key Technical Concepts
 
 ### 1. Temperature Compensation Algorithm
-**Location:** `temp_monitor.py:103-133`
+**Location:** `temp_monitor.py:119-149`
 
 The Sense HAT sensor is affected by CPU heat due to proximity on the board. Compensation formula:
 ```python
@@ -67,29 +70,41 @@ comp_temp = raw_temp - ((cpu_temp - raw_temp) * factor)
 - **factor:** 0.7 (calibration constant, may need adjustment per hardware)
 - **Averaging:** Takes 5 readings from both humidity and pressure sensors
 - **Outlier removal:** Removes highest and lowest values before averaging
+- **Graceful degradation:** Uses raw temperature if CPU temp unavailable
 
 ### 2. Sensor Data Collection
-**Location:** `temp_monitor.py:151-176`
+**Location:** `temp_monitor.py:167-192`
 
 Background thread pattern:
 - Runs continuously in daemon thread
 - 60-second sampling interval (configurable via `sampling_interval`)
 - Updates global variables: `current_temp`, `current_humidity`, `last_updated`
 - Displays temperature on LED matrix via `sense.show_message()`
-- Logs all readings to file
+- Logs all readings to file with CPU temperature when available
 
 ### 3. Bearer Token Authentication
-**Location:** `temp_monitor.py:59-77`
+**Location:** `temp_monitor.py:52-90`
 
 Security implementation:
 - Uses decorator pattern (`@require_token`) to protect API endpoints
 - Requires `Authorization: Bearer <token>` header
 - Token stored in `.env` file and loaded via `python-dotenv`
-- Auto-generates token if `.env` missing
+- Auto-generates token if `.env` missing (shown on console)
 - Returns 401 for missing auth, 403 for invalid token
 
-### 4. Web Dashboard Auto-Refresh
-**Location:** `temp_monitor.py:188` (meta refresh tag)
+### 4. Environment Variable Configuration
+**Location:** `temp_monitor.py:16-34, 94, 105`
+
+Configuration via environment variables:
+- **LOG_FILE:** Path for temperature/humidity log file (defaults to `temp_monitor.log`)
+- **LOGO_PATH:** Path to logo image displayed on dashboard (defaults to `My-img8bit-1com-Effect.gif`)
+- **FAVICON_PATH:** Path to favicon file (defaults to `temp-favicon.ico`)
+- Supports both absolute and relative paths
+- Log directory is auto-created if it doesn't exist
+- Missing favicon logs warning but doesn't crash application
+
+### 5. Web Dashboard Auto-Refresh
+**Location:** `temp_monitor.py:204` (meta refresh tag)
 
 ```html
 <meta http-equiv="refresh" content="60">
@@ -123,11 +138,16 @@ Security implementation:
    ```
 
 3. **Configuration:**
-   - Generate bearer token: `python generate_token.py`
-   - Update hardcoded paths in `temp_monitor.py`:
-     - Line 18: Log file path
-     - Line 82: Logo image path
-     - Line 91: Favicon path
+   - Copy `.env.example` to `.env` and customize as needed:
+     ```bash
+     cp .env.example .env
+     ```
+   - Generate bearer token: `python generate_token.py` (or manually set in `.env`)
+   - Update environment variables in `.env`:
+     - `LOG_FILE`: Path to log file
+     - `LOGO_PATH`: Path to logo image
+     - `FAVICON_PATH`: Path to favicon
+     - `BEARER_TOKEN`: API authentication token (auto-generated if omitted)
 
 4. **Running Locally:**
    ```bash
@@ -203,17 +223,24 @@ All API endpoints return JSON with consistent structure:
 - Web dashboard (`/`) is public (no authentication)
 - Favicon route is public
 
-### Hardcoded Values to Be Aware Of
+### Configuration via Environment Variables
 
-**User-specific paths that need updating:**
-- `temp_monitor.py:18` - Log file: `/home/fakebizprez/temp_monitor.log`
-- `temp_monitor.py:82` - Logo: `/home/fakebizprez/My-img8bit-1com-Effect.gif`
-- `temp_monitor.py:91` - Favicon: `/home/fakebizprez/temp-favicon.ico`
+**Path variables (configured in `.env`):**
+- `LOG_FILE` - Log file path (defaults to `temp_monitor.log`)
+- `LOGO_PATH` - Logo image path (defaults to `My-img8bit-1com-Effect.gif`)
+- `FAVICON_PATH` - Favicon path (defaults to `temp-favicon.ico`)
+- `BEARER_TOKEN` - API authentication token (auto-generated if missing)
 
-**Configuration constants:**
-- `temp_monitor.py:37` - Sampling interval: 60 seconds
-- `temp_monitor.py:127` - Temperature compensation factor: 0.7
-- `temp_monitor.py:351` - Flask port: 8080
+**Hardcoded constants (code-level configuration):**
+- `temp_monitor.py:50` - Sampling interval: 60 seconds
+- `temp_monitor.py:143` - Temperature compensation factor: 0.7
+- `temp_monitor.py:367` - Flask port: 8080
+
+**File validation and safety:**
+- Log directory is auto-created if missing (lines 20-25)
+- Favicon existence is checked at startup with warning if missing (lines 106-107)
+- Missing logo image logs error but doesn't crash (lines 100-102)
+- All file operations wrapped in try-except blocks
 
 ---
 
@@ -229,25 +256,35 @@ All API endpoints return JSON with consistent structure:
 
 ### Modifying Temperature Compensation
 
-1. Edit `get_compensated_temperature()` function (line 103)
-2. Adjust `factor` variable (currently 0.7)
+1. Edit `get_compensated_temperature()` function (line 119)
+2. Adjust `factor` variable (currently 0.7, line 143)
 3. Consider hardware-specific calibration
 4. Test with physical hardware for accuracy
 5. Update comments explaining calibration methodology
 
 ### Changing Sampling Interval
 
-1. Modify `sampling_interval` global variable (line 37)
-2. Update web dashboard meta refresh (line 188) to match
+1. Modify `sampling_interval` global variable (line 50)
+2. Update web dashboard meta refresh (line 204) to match
 3. Consider LED display frequency impact
 4. Update README documentation
+
+### Adding Configuration Options
+
+1. Add variable to global configuration (top of file)
+2. Load from environment with `os.getenv('VARIABLE_NAME', default)`
+3. Validate and document in `.env.example`
+4. Update CLAUDE.md with configuration section
+5. Ensure backwards compatibility with defaults
 
 ### Bug Fixes Related to Hardware
 
 **Common issues:**
-- **Missing CPU temp:** Gracefully handled (returns None), see line 100-101
-- **Sense HAT not detected:** App fails at startup with clear error message
-- **Outlier filtering:** Requires at least 3 readings, see line 116
+- **Missing CPU temp:** Gracefully handled (returns None), see line 116-117
+- **Sense HAT not detected:** App fails at startup with clear error message (lines 37-42)
+- **Outlier filtering:** Requires at least 3 readings, see line 132
+- **Missing logo image:** Logs error but app continues, see lines 100-102
+- **Missing favicon:** Logs warning at startup, returns 404 on request (lines 106-107, 286-289)
 
 **Recent bug fix example:**
 - Commit 909e636: "Handle missing CPU temperature gracefully"
@@ -339,18 +376,37 @@ All API endpoints return JSON with consistent structure:
 
 ## Recent Changes & History
 
-Based on git log analysis:
+### Latest Changes (Current Sprint)
 
-1. **Latest (b13c8e6):** README updates
-2. **Bug fix (909e636):** Handle missing CPU temperature gracefully
-3. **Feature (cc6cdc9):** Added bearer token authentication to API endpoints and token management tools
-4. **Feature (694a83f):** API schema creation
+1. **Environment Variables Configuration** (6e1f06f)
+   - Replaced hardcoded paths with environment variables
+   - `LOG_FILE`, `LOGO_PATH`, `FAVICON_PATH` configurable via `.env`
+   - Supports both absolute and relative paths
+
+2. **Log File Path Validation** (43e866d)
+   - Added automatic creation of log directory if missing
+   - Proper error handling for directory creation failures
+   - Clear error messages if logging cannot be initialized
+
+3. **Favicon Validation** (001e0a5)
+   - Added existence check for favicon file at startup
+   - Logs warning if favicon is missing
+   - Gracefully handles missing favicon without crashing (returns 404)
+
+4. **Security Enhancement** (0a6b4ff)
+   - Updated `.env.example` with instructions not to hardcode BEARER_TOKEN
+   - Token auto-generation is now the recommended approach
+
+5. **Development Infrastructure** (05dcd8d)
+   - Added Python cache files to `.gitignore`
+   - Includes `__pycache__/`, `*.pyc`, `*.pyo`, `*.pyd`
 
 ### Evolution Pattern
 - Started as simple temperature monitor
 - Added API endpoints for programmatic access
 - Enhanced security with bearer token authentication
 - Ongoing refinement of error handling and edge cases
+- Recent focus: Configuration management and file validation
 
 ---
 
@@ -394,16 +450,17 @@ Based on git log analysis:
 
 Areas where improvements could be made:
 
-1. **Configuration Management:** Move hardcoded paths to config file or environment variables
-2. **Database Integration:** Store historical data for trending analysis
-3. **Alerting:** Email/SMS notifications for out-of-range conditions
-4. **Graphing:** Historical charts in web dashboard
-5. **Multi-sensor Support:** Monitor multiple rooms with multiple devices
-6. **HTTPS Support:** SSL/TLS for secure remote access
-7. **Docker Support:** Containerization for easier deployment
-8. **Automated Testing:** Unit and integration test suite
-9. **Web Dashboard Auth:** Optional authentication for public deployments
-10. **API Versioning:** `/api/v1/temp` for future compatibility
+1. **Database Integration:** Store historical data for trending analysis
+2. **Alerting:** Email/SMS notifications for out-of-range conditions
+3. **Graphing:** Historical charts in web dashboard
+4. **Multi-sensor Support:** Monitor multiple rooms with multiple devices
+5. **HTTPS Support:** SSL/TLS for secure remote access
+6. **Docker Support:** Containerization for easier deployment
+7. **Automated Testing:** Unit and integration test suite for critical functions
+8. **Web Dashboard Auth:** Optional authentication for public deployments
+9. **API Versioning:** `/api/v1/temp` for future compatibility
+10. **Rate Limiting:** Implement rate limiting on API endpoints
+11. **Token Expiration:** Add token expiration and rotation policies
 
 ---
 
@@ -436,4 +493,12 @@ Areas where improvements could be made:
 
 ---
 
-*This document was generated for AI assistants working with the Temperature Monitor codebase. Last updated: 2025-11-27*
+*This document is maintained for AI assistants working with the Temperature Monitor codebase. Last updated: 2025-11-27*
+
+### Documentation Updates in This Version
+- Updated all line numbers to reflect current codebase structure
+- Added Environment Variable Configuration section
+- Documented recent changes including path configuration, file validation, and security improvements
+- Clarified configuration approach (environment variables instead of hardcoded values)
+- Added new subsection "Adding Configuration Options" for common tasks
+- Enhanced troubleshooting section with file validation issues
