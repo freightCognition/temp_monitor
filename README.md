@@ -234,7 +234,7 @@ The application will be available at `http://[raspberry-pi-ip]:8080`.
 To generate a new bearer token inside the running container:
 
 ```bash
-docker-compose exec temp-monitor python generate_token.py
+docker-compose exec temp-monitor python3 generate_token.py
 ```
 
 ### Viewing Logs
@@ -343,7 +343,7 @@ You can regenerate the token in two ways:
 
 - Keep your bearer token secure and don't share it publicly
 - The token is stored in the `.env` file, which should be kept private
-- Consider regenerating the token periodically for enhanced security    
+- Consider regenerating the token periodically for enhanced security      
 
 
 
