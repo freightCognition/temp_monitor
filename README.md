@@ -217,9 +217,15 @@ mkdir -p logs assets
 cp My-img8bit-1com-Effect.gif assets/logo.gif
 cp temp-favicon.ico assets/favicon.ico
 
+# IMPORTANT: Create .env file before starting (required for volume mount)
+# If .env doesn't exist or was created as a directory by a failed mount, fix it:
+rm -rf .env 2>/dev/null; cp .env.example .env
+
 # Start the container
 docker-compose up -d
 ```
+
+**Note:** The `.env` file must exist as a regular file before running `docker-compose up`. If Docker previously failed to start and created `.env` as a directory, you must remove it first with `rm -rf .env` and then copy from `.env.example`.
 
 The application will be available at `http://[raspberry-pi-ip]:8080`.
 
@@ -337,7 +343,7 @@ You can regenerate the token in two ways:
 
 - Keep your bearer token secure and don't share it publicly
 - The token is stored in the `.env` file, which should be kept private
-- Consider regenerating the token periodically for enhanced security  
+- Consider regenerating the token periodically for enhanced security    
 
 
 
