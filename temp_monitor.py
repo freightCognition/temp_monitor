@@ -1,10 +1,9 @@
 from sense_hat import SenseHat
-from flask import Flask, jsonify, render_template_string, send_file, request, abort
+from flask import Flask, jsonify, render_template_string, request, abort
 import time
 import logging
 import threading
 import statistics
-import base64
 import os
 import secrets
 import functools
@@ -88,23 +87,6 @@ def require_token(f):
             
         return f(*args, **kwargs)
     return decorated_function
-
-# Try to read and encode the image file
-image_base64 = ""
-logo_path = os.getenv('LOGO_PATH', 'My-img8bit-1com-Effect.gif')
-try:
-    with open(logo_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-        image_base64 = f"data:image/gif;base64,{encoded_string}"
-        logging.info("Successfully loaded and encoded image")
-except Exception as e:
-    logging.error(f"Failed to load image: {e}")
-    image_base64 = ""  # Keep empty if failed
-
-# Path to favicon file
-favicon_path = os.getenv('FAVICON_PATH', 'temp-favicon.ico')
-if not os.path.exists(favicon_path) or not os.path.isfile(favicon_path):
-    logging.warning(f"Favicon file not found or not accessible at '{favicon_path}' - favicon requests will return 404")
 
 def get_cpu_temperature():
     """Get the temperature of the CPU for compensation"""
@@ -206,7 +188,6 @@ def update_sensor_data():
 @app.route('/')
 def index():
     """Web interface showing temperature and humidity"""
-    global image_base64
     
     html_template = """
     <!DOCTYPE html>
@@ -215,7 +196,7 @@ def index():
             <title>Server Room Environmental Monitor</title>
             <meta http-equiv="refresh" content="60">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <link rel="shortcut icon" href="/favicon.ico">
+            <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
             <style>
                 body { 
                     font-family: Arial, sans-serif; 
@@ -261,9 +242,7 @@ def index():
         </head>
         <body>
             <div class="container">
-                {% if image_data %}
-                <img src="{{ image_data }}" alt="Company Logo" class="logo">
-                {% endif %}
+                <img src="{{ url_for('static', filename='My-img8bit-1com-Effect.gif') }}" alt="Company Logo" class="logo">
                 <h1>Server Room Environmental Monitor</h1>
                 
                 <h2>Temperature</h2>
@@ -287,18 +266,8 @@ def index():
         temperature=current_temp, 
         fahrenheit=fahrenheit,
         humidity=current_humidity, 
-        last_updated=last_updated,
-        image_data=image_base64
+        last_updated=last_updated
     )
-
-@app.route('/favicon.ico')
-def favicon():
-    """Serve the favicon"""
-    try:
-        return send_file(favicon_path, mimetype='image/x-icon')
-    except Exception as e:
-        logging.error(f"Failed to serve favicon: {e}")
-        return "", 404  # Return empty response with 404 status code if favicon not found
 
 @app.route('/api/temp')
 @require_token

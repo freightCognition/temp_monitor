@@ -22,11 +22,11 @@ temp_monitor/
 ├── .gitignore               # Git ignore rules
 ├── README.md                 # User-facing documentation
 ├── CLAUDE.md                # AI assistant guide
-├── assets/                   # Web assets (images, favicons)
-│   ├── temp-favicon.png
-│   └── temp*.webp           # Various temperature-related images
-├── My-img8bit-1com-Effect.gif  # Logo displayed on dashboard
-└── temp-favicon.ico         # Favicon for web interface
+├── static/                  # Web assets served by Flask
+│   ├── My-img8bit-1com-Effect.gif  # Logo displayed on dashboard
+│   └── favicon.ico          # Favicon for web interface
+├── My-img8bit-1com-Effect.gif  # Legacy logo copy (not used by Flask static route)
+└── temp-favicon.ico         # Legacy favicon copy (not used by Flask static route)
 ```
 
 ### Core Files
@@ -97,11 +97,9 @@ Security implementation:
 
 Configuration via environment variables:
 - **LOG_FILE:** Path for temperature/humidity log file (defaults to `temp_monitor.log`)
-- **LOGO_PATH:** Path to logo image displayed on dashboard (defaults to `My-img8bit-1com-Effect.gif`)
-- **FAVICON_PATH:** Path to favicon file (defaults to `temp-favicon.ico`)
-- Supports both absolute and relative paths
+- **Static assets:** Served from the `static/` directory bundled with the app; replace the files there to customize images.
+- Supports both absolute and relative paths for log files
 - Log directory is auto-created if it doesn't exist
-- Missing favicon logs warning but doesn't crash application
 
 ### 5. Web Dashboard Auto-Refresh
 **Location:** `temp_monitor.py:204` (meta refresh tag)
@@ -142,12 +140,11 @@ Configuration via environment variables:
      ```bash
      cp .env.example .env
      ```
-   - Generate bearer token: `python generate_token.py` (or manually set in `.env`)
-   - Update environment variables in `.env`:
-     - `LOG_FILE`: Path to log file
-     - `LOGO_PATH`: Path to logo image
-     - `FAVICON_PATH`: Path to favicon
-     - `BEARER_TOKEN`: API authentication token (auto-generated if omitted)
+  - Generate bearer token: `python generate_token.py` (or manually set in `.env`)
+  - Update environment variables in `.env`:
+    - `LOG_FILE`: Path to log file
+    - `BEARER_TOKEN`: API authentication token (auto-generated if omitted)
+    - Static assets are located in `static/`; replace those files directly if you want custom branding
 
 4. **Running Locally:**
    ```bash
@@ -227,9 +224,10 @@ All API endpoints return JSON with consistent structure:
 
 **Path variables (configured in `.env`):**
 - `LOG_FILE` - Log file path (defaults to `temp_monitor.log`)
-- `LOGO_PATH` - Logo image path (defaults to `My-img8bit-1com-Effect.gif`)
-- `FAVICON_PATH` - Favicon path (defaults to `temp-favicon.ico`)
 - `BEARER_TOKEN` - API authentication token (auto-generated if missing)
+
+**Static assets:**
+- Served from the `static/` directory; replace `static/My-img8bit-1com-Effect.gif` or `static/favicon.ico` to customize branding.
 
 **Hardcoded constants (code-level configuration):**
 - `temp_monitor.py:50` - Sampling interval: 60 seconds
@@ -238,8 +236,6 @@ All API endpoints return JSON with consistent structure:
 
 **File validation and safety:**
 - Log directory is auto-created if missing (lines 20-25)
-- Favicon existence is checked at startup with warning if missing (lines 106-107)
-- Missing logo image logs error but doesn't crash (lines 100-102)
 - All file operations wrapped in try-except blocks
 
 ---
@@ -379,16 +375,16 @@ All API endpoints return JSON with consistent structure:
 ### Latest Changes (Current Sprint)
 
 1. **Environment Variables Configuration** (6e1f06f)
-   - Replaced hardcoded paths with environment variables
-   - `LOG_FILE`, `LOGO_PATH`, `FAVICON_PATH` configurable via `.env`
-   - Supports both absolute and relative paths
+   - Replaced hardcoded paths with environment variables for logs
+   - Static assets now live in the `static/` directory instead of configurable paths
+   - Supports both absolute and relative paths for log configuration
 
 2. **Log File Path Validation** (43e866d)
    - Added automatic creation of log directory if missing
    - Proper error handling for directory creation failures
    - Clear error messages if logging cannot be initialized
 
-3. **Favicon Validation** (001e0a5)
+3. **Static Asset Validation** (001e0a5)
    - Added existence check for favicon file at startup
    - Logs warning if favicon is missing
    - Gracefully handles missing favicon without crashing (returns 404)

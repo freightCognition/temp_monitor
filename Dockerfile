@@ -27,9 +27,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY temp_monitor.py generate_token.py ./
+COPY static ./static
 
 # Create directories for volumes
-RUN mkdir -p /app/logs /app/assets
+RUN mkdir -p /app/logs /app/static
 
 # Expose the Flask port
 EXPOSE 8080
