@@ -1,0 +1,4 @@
+2025-11-28 05:02:16,375 - INFO - Generated new bearer token
+2025-11-28 05:02:16,375 - INFO - Saved bearer token to .env file
+2025-11-28 05:02:16,378 - INFO - Starting temperature monitor service
+2025-11-28 05:02:16,379 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
