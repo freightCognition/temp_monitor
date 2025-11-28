@@ -72,13 +72,9 @@ pip install flask
    ```
    # Log file path (absolute or relative)
    LOG_FILE=/home/yourusername/temp_monitor.log
-
-   # Logo image path (absolute or relative)
-   LOGO_PATH=/path/to/My-img8bit-1com-Effect.gif
-
-   # Favicon path (absolute or relative)
-   FAVICON_PATH=/path/to/temp-favicon.ico
    ```
+
+   Static assets (logo and favicon) are served from the repository's `static/` directory by default. Replace the files there if you want to customize the images.
 
 3. Generate a bearer token:
    ```bash
@@ -127,16 +123,14 @@ The application can be deployed as a Docker container, making it easier to manag
 
 ### Preparing for Docker Deployment
 
-1. **Create necessary directories:**
+1. **Create a logs directory:**
    ```bash
-   mkdir -p logs assets
+   mkdir -p logs
    ```
 
-2. **Copy your assets to the assets directory:**
-   ```bash
-   cp My-img8bit-1com-Effect.gif assets/logo.gif
-   cp temp-favicon.ico assets/favicon.ico
-   ```
+2. **(Optional) Replace static assets:**
+   The container serves images from the built-in `static/` directory. If you want to override them, replace the files in `stat
+ic/` before building the image or mount your own `static/` directory at runtime.
 
 3. **Create a .env file:**
    ```bash
@@ -191,13 +185,11 @@ docker run -d \
   --privileged \
   -p 8080:8080 \
   -v $(pwd)/logs:/app/logs \
-  -v $(pwd)/assets:/app/assets \
+  -v $(pwd)/static:/app/static:ro \
   -v $(pwd)/.env:/app/.env \
   -v /sys:/sys:ro \
   --device /dev/i2c-1:/dev/i2c-1 \
   -e LOG_FILE=/app/logs/temp_monitor.log \
-  -e LOGO_PATH=/app/assets/logo.gif \
-  -e FAVICON_PATH=/app/assets/favicon.ico \
   temp-monitor
 ```
 
@@ -280,9 +272,9 @@ The web interface uses an embedded HTML template with CSS. You can customize the
 The application uses environment variables for configuration. Create a `.env` file (copy from `.env.example`) with these settings:
 
 - **LOG_FILE**: Path to the log file (defaults to `temp_monitor.log`)
-- **LOGO_PATH**: Path to the logo image for the dashboard (defaults to `My-img8bit-1com-Effect.gif`)
-- **FAVICON_PATH**: Path to the favicon file (defaults to `temp-favicon.ico`)
 - **BEARER_TOKEN**: API authentication token (auto-generated if not provided)
+- **Static assets**: Images are served from the `static/` directory. Replace `static/My-img8bit-1com-Effect.gif` or `static/f
+avicon.ico` if you need custom artwork.
 
 All paths can be absolute or relative. The application will create the log directory if it doesn't exist.
 
@@ -291,7 +283,7 @@ All paths can be absolute or relative. The application will create the log direc
 - **Sense HAT not detected**: Ensure the HAT is properly connected and that I2C is enabled (use `sudo raspi-config`)
 - **Web interface not accessible**: Check that port 8080 is not blocked by a firewall
 - **Inaccurate temperature**: Adjust the compensation factor in the `get_compensated_temperature()` function
-- **Favicon not displaying**: Verify the `FAVICON_PATH` points to an existing file
+- **Favicon not displaying**: Verify `static/favicon.ico` exists and is being served
 - **Log file creation fails**: Ensure the directory specified in `LOG_FILE` exists or that the user has permission to create it
 
 ## License
