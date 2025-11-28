@@ -146,6 +146,9 @@ def get_compensated_temperature():
     else:
         comp_temp = raw_temp
     
+    # Correction: Temperature is off by +10F, so subtract 10F (approx 5.6C)
+    comp_temp = comp_temp - (10 * 5 / 9)
+
     return round(comp_temp, 1)
 
 def get_humidity():
@@ -161,8 +164,17 @@ def get_humidity():
         readings.sort()
         readings = readings[1:-1]  # Remove highest and lowest
     
+    humidity = statistics.mean(readings)
+
+    # Correction: Humidity is off by -10%, so add 10%
+    humidity += 10
+
+    # Ensure humidity doesn't exceed 100%
+    if humidity > 100:
+        humidity = 100
+
     # Return the average
-    return round(statistics.mean(readings), 1)
+    return round(humidity, 1)
 
 def update_sensor_data():
     """Background thread function to update sensor data periodically"""
