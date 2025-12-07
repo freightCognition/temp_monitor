@@ -8,7 +8,7 @@ import os
 import secrets
 import functools
 import requests
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
@@ -49,6 +49,29 @@ current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
 
+def _persist_bearer_token(token):
+    """Save bearer token to .env file while preserving other environment variables"""
+    env_path = '.env'
+    env_exists = os.path.isfile(env_path)
+    env_content = []
+    
+    if env_exists:
+        with open(env_path, 'r') as f:
+            env_content = f.readlines()
+    
+    token_line_found = False
+    for i, line in enumerate(env_content):
+        if line.startswith('BEARER_TOKEN='):
+            env_content[i] = f'BEARER_TOKEN={token}\n'
+            token_line_found = True
+            break
+    
+    if not token_line_found:
+        env_content.append(f'BEARER_TOKEN={token}\n')
+    
+    with open(env_path, 'w') as f:
+        f.writelines(env_content)
+
 # Get bearer token from environment or generate a new one if not present
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
 if not BEARER_TOKEN:
@@ -58,7 +81,7 @@ if not BEARER_TOKEN:
     
     # Save the token to .env file (preserving other env vars)
     try:
-        set_key('.env', 'BEARER_TOKEN', BEARER_TOKEN)
+        _persist_bearer_token(BEARER_TOKEN)
         logging.info("Saved bearer token to .env file")
         print(f"New bearer token generated and saved to .env file: {BEARER_TOKEN}")
     except Exception as e:
@@ -363,7 +386,7 @@ def generate_new_token():
     
     # Save to .env file (preserving other env vars)
     try:
-        set_key('.env', 'BEARER_TOKEN', new_token)
+        _persist_bearer_token(new_token)
         
         # Update the global token
         BEARER_TOKEN = new_token
