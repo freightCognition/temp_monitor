@@ -273,10 +273,39 @@ The application uses environment variables for configuration. Create a `.env` fi
 
 - **LOG_FILE**: Path to the log file (defaults to `temp_monitor.log`)
 - **BEARER_TOKEN**: API authentication token (auto-generated if not provided)
-- **Static assets**: Images are served from the `static/` directory. Replace `static/My-img8bit-1com-Effect.gif` or `static/f
-avicon.ico` if you need custom artwork.
+- **Static assets**: Images are served from the `static/` directory. Replace `static/My-img8bit-1com-Effect.gif` or `static/favicon.ico` if you need custom artwork.
 
 All paths can be absolute or relative. The application will create the log directory if it doesn't exist.
+
+## Slack Notifications (Optional)
+
+Configure environment variables to enable automatic Slack notifications with temperature and humidity updates:
+
+- **SLACK_WEBHOOK_URL**: Slack incoming webhook URL for notifications
+- **SLACK_NOTIFICATION_INTERVAL**: Notification frequency in seconds (default: 3600)
+
+### Setup Slack Webhook
+
+1. Create a Slack incoming webhook in your workspace (go to Slack App settings and create an Incoming Webhook)
+2. Add the webhook URL to your `.env` file
+3. Configure notification interval as needed
+4. Restart the application
+
+Example configuration in `.env`:
+```
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+SLACK_NOTIFICATION_INTERVAL=3600
+```
+
+The application will send formatted messages to your Slack channel at the configured interval, including temperature (in both Celsius and Fahrenheit) and humidity readings.
+
+### Manual Slack Notification
+
+You can also trigger a Slack notification manually via the API:
+
+```bash
+curl -X POST -H "Authorization: Bearer YOUR_TOKEN_HERE" http://your-server:8080/api/notify-slack
+```
 
 ## Troubleshooting
 
@@ -330,6 +359,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://your-server:8080/api/temp
 - `/api/raw` - Get raw temperature data (including CPU temperature)
 - `/api/verify-token` - Verify if your token is valid
 - `/api/generate-token` - Generate a new token (requires existing valid token)
+- `/api/notify-slack` - Manually trigger a Slack notification (requires Slack webhook to be configured)
 
 ## Regenerating Tokens
 
@@ -349,7 +379,7 @@ You can regenerate the token in two ways:
 
 - Keep your bearer token secure and don't share it publicly
 - The token is stored in the `.env` file, which should be kept private
-- Consider regenerating the token periodically for enhanced security 
+- Consider regenerating the token periodically for enhanced security    
 
 
 
