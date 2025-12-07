@@ -8,7 +8,7 @@ import os
 import secrets
 import functools
 import requests
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 # Load environment variables from .env file
 load_dotenv()
@@ -56,10 +56,9 @@ if not BEARER_TOKEN:
     BEARER_TOKEN = secrets.token_hex(32)  # 64 character hex string
     logging.info("Generated new bearer token")
     
-    # Save the token to .env file
+    # Save the token to .env file (preserving other env vars)
     try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={BEARER_TOKEN}\n")
+        set_key('.env', 'BEARER_TOKEN', BEARER_TOKEN)
         logging.info("Saved bearer token to .env file")
         print(f"New bearer token generated and saved to .env file: {BEARER_TOKEN}")
     except Exception as e:
@@ -362,10 +361,9 @@ def generate_new_token():
     # Generate new token
     new_token = secrets.token_hex(32)
     
-    # Save to .env file
+    # Save to .env file (preserving other env vars)
     try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={new_token}\n")
+        set_key('.env', 'BEARER_TOKEN', new_token)
         
         # Update the global token
         BEARER_TOKEN = new_token
