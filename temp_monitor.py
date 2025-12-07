@@ -7,6 +7,7 @@ import statistics
 import os
 import secrets
 import functools
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -48,6 +49,29 @@ current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
 
+def _persist_bearer_token(token):
+    """Save bearer token to .env file while preserving other environment variables"""
+    env_path = '.env'
+    env_exists = os.path.isfile(env_path)
+    env_content = []
+    
+    if env_exists:
+        with open(env_path, 'r') as f:
+            env_content = f.readlines()
+    
+    token_line_found = False
+    for i, line in enumerate(env_content):
+        if line.startswith('BEARER_TOKEN='):
+            env_content[i] = f'BEARER_TOKEN={token}\n'
+            token_line_found = True
+            break
+    
+    if not token_line_found:
+        env_content.append(f'BEARER_TOKEN={token}\n')
+    
+    with open(env_path, 'w') as f:
+        f.writelines(env_content)
+
 # Get bearer token from environment or generate a new one if not present
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
 if not BEARER_TOKEN:
@@ -55,10 +79,9 @@ if not BEARER_TOKEN:
     BEARER_TOKEN = secrets.token_hex(32)  # 64 character hex string
     logging.info("Generated new bearer token")
     
-    # Save the token to .env file
+    # Save the token to .env file (preserving other env vars)
     try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={BEARER_TOKEN}\n")
+        _persist_bearer_token(BEARER_TOKEN)
         logging.info("Saved bearer token to .env file")
         print(f"New bearer token generated and saved to .env file: {BEARER_TOKEN}")
     except Exception as e:
@@ -67,6 +90,10 @@ if not BEARER_TOKEN:
         print(f"Please manually add this token to your .env file: BEARER_TOKEN={BEARER_TOKEN}")
 else:
     logging.info("Using bearer token from .env file")
+
+# Slack webhook configuration (optional)
+SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL')
+SLACK_NOTIFICATION_INTERVAL = int(os.getenv('SLACK_NOTIFICATION_INTERVAL', 3600))
 
 def require_token(f):
     """Decorator to require bearer token authentication for API endpoints"""
@@ -184,6 +211,58 @@ def update_sensor_data():
         except Exception as e:
             logging.error(f"Error updating sensor data: {e}")
             time.sleep(5)  # Short sleep before retry on error
+
+def send_slack_notification():
+    """Background thread function to send periodic Slack notifications"""
+    global current_temp, current_humidity, last_updated
+    
+    while True:
+        try:
+            if SLACK_WEBHOOK_URL:
+                temp_f = round((current_temp * 9/5) + 32, 1)
+                
+                message = {
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": ":thermometer: *Server Room Environmental Update*"
+                            }
+                        },
+                        {
+                            "type": "section",
+                            "fields": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": f"*Temperature:*\n{current_temp}\u00b0C ({temp_f}\u00b0F)"
+                                },
+                                {
+                                    "type": "mrkdwn",
+                                    "text": f"*Humidity:*\n{current_humidity}%"
+                                }
+                            ]
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": f"Updated: {last_updated}"
+                                }
+                            ]
+                        }
+                    ]
+                }
+                
+                response = requests.post(SLACK_WEBHOOK_URL, json=message, timeout=10)
+                response.raise_for_status()
+                logging.info(f"Slack notification sent successfully - Temp: {current_temp}\u00b0C, Humidity: {current_humidity}%")
+            
+            time.sleep(SLACK_NOTIFICATION_INTERVAL)
+        except Exception as e:
+            logging.error(f"Error in Slack notification: {e}")
+            time.sleep(60)
 
 @app.route('/')
 def index():
@@ -305,10 +384,9 @@ def generate_new_token():
     # Generate new token
     new_token = secrets.token_hex(32)
     
-    # Save to .env file
+    # Save to .env file (preserving other env vars)
     try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={new_token}\n")
+        _persist_bearer_token(new_token)
         
         # Update the global token
         BEARER_TOKEN = new_token
@@ -335,13 +413,80 @@ def verify_token():
         'message': 'Token is valid'
     })
 
+@app.route('/api/notify-slack', methods=['POST'])
+@require_token
+def manual_slack_notification():
+    """Manually trigger a Slack notification"""
+    if not SLACK_WEBHOOK_URL:
+        return jsonify({'error': 'Slack webhook URL not configured'}), 400
+    
+    try:
+        temp_f = round((current_temp * 9/5) + 32, 1)
+        
+        message = {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": ":thermometer: *Server Room Environmental Update*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Temperature:*\n{current_temp}\u00b0C ({temp_f}\u00b0F)"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Humidity:*\n{current_humidity}%"
+                        }
+                    ]
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"Updated: {last_updated}"
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        response = requests.post(SLACK_WEBHOOK_URL, json=message, timeout=10)
+        response.raise_for_status()
+        
+        logging.info(f"Manual Slack notification sent - Temp: {current_temp}\u00b0C, Humidity: {current_humidity}%")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Slack notification sent manually',
+            'temperature_c': current_temp,
+            'humidity': current_humidity
+        })
+    except Exception as e:
+        logging.error(f"Manual Slack notification failed: {e}")
+        return jsonify({'error': f'Failed to send notification: {str(e)}'}), 500
+
 if __name__ == '__main__':
     # Start the background thread to update sensor data
     logging.info("Starting temperature monitor service")
     sensor_thread = threading.Thread(target=update_sensor_data, daemon=True)
     sensor_thread.start()
     
-    # Give the thread a moment to get initial readings
+    # Start Slack notification thread if webhook URL is configured
+    if SLACK_WEBHOOK_URL:
+        slack_thread = threading.Thread(target=send_slack_notification, daemon=True)
+        slack_thread.start()
+        logging.info("Slack notification thread started")
+    else:
+        logging.info("Slack webhook URL not configured, skipping notifications")
+    
+    # Give threads a moment to get initial readings
     time.sleep(2)
     
     # Start the Flask web server
