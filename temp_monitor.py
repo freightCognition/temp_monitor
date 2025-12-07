@@ -128,8 +128,8 @@ def get_compensated_temperature():
     else:
         comp_temp = raw_temp
     
-    # Correction: Temperature is off by +10F, so subtract 10F (approx 5.6C)
-    comp_temp = comp_temp - (10 * 5 / 9)
+    # Correction: Temperature is 6°F lower than actual, so add 6°F (approx 3.3°C)
+    comp_temp = comp_temp + (6 * 5 / 9)
 
     return round(comp_temp, 1)
 
@@ -148,8 +148,8 @@ def get_humidity():
     
     humidity = statistics.mean(readings)
 
-    # Correction: Humidity is off by -10%, so add 10%
-    humidity += 10
+    # Correction: Humidity is 6% higher than actual, so subtract 6%
+    humidity -= 6
 
     # Ensure humidity doesn't exceed 100%
     if humidity > 100:
