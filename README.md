@@ -273,8 +273,21 @@ The application uses environment variables for configuration. Create a `.env` fi
 
 - **LOG_FILE**: Path to the log file (defaults to `temp_monitor.log`)
 - **BEARER_TOKEN**: API authentication token (auto-generated if not provided)
+- **SLACK_WEBHOOK_URL**: The unique URL provided by Slack for the incoming webhook
+- **SLACK_NOTIFICATION_INTERVAL**: Frequency of notifications in seconds (defaults to 300)
 - **Static assets**: Images are served from the `static/` directory. Replace `static/My-img8bit-1com-Effect.gif` or `static/f
 avicon.ico` if you need custom artwork.
+
+**Important:** When updating the `.env` file, ensure you **append** new values rather than overwriting the file, to preserve existing configurations like your bearer token.
+
+Example using `cat` to append:
+```bash
+cat >> .env << EOF
+# Slack Integration Settings
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+SLACK_NOTIFICATION_INTERVAL=300
+EOF
+```
 
 All paths can be absolute or relative. The application will create the log directory if it doesn't exist.
 

@@ -7,6 +7,8 @@ import statistics
 import os
 import secrets
 import functools
+import requests
+import json
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -47,6 +49,15 @@ current_temp = 0
 current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
+
+# Slack Configuration
+SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL')
+# Default to 5 minutes (300 seconds) if not specified
+try:
+    SLACK_NOTIFICATION_INTERVAL = int(os.getenv('SLACK_NOTIFICATION_INTERVAL', '300'))
+except ValueError:
+    SLACK_NOTIFICATION_INTERVAL = 300
+    logging.warning("Invalid SLACK_NOTIFICATION_INTERVAL, defaulting to 300 seconds")
 
 # Get bearer token from environment or generate a new one if not present
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
@@ -335,12 +346,114 @@ def verify_token():
         'message': 'Token is valid'
     })
 
+def send_slack_notification():
+    """Send current sensor data to Slack"""
+    global current_temp, current_humidity, last_updated
+
+    if not SLACK_WEBHOOK_URL:
+        logging.warning("Slack webhook URL not configured, skipping notification")
+        return False
+
+    try:
+        fahrenheit = round((current_temp * 9/5) + 32, 1)
+
+        payload = {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "🌡️ *Server Room Environmental Update*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Temperature:*\n{current_temp}°C ({fahrenheit}°F)"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Humidity:*\n{current_humidity}%"
+                        }
+                    ]
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"Updated: {last_updated}"
+                        }
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(
+            SLACK_WEBHOOK_URL,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            logging.info("Slack notification sent successfully")
+            return True
+        else:
+            logging.error(f"Failed to send Slack notification: {response.status_code} {response.text}")
+            return False
+
+    except Exception as e:
+        logging.error(f"Error sending Slack notification: {e}")
+        return False
+
+def slack_notification_loop():
+    """Background thread function to send Slack notifications periodically"""
+    logging.info(f"Starting Slack notification loop with interval {SLACK_NOTIFICATION_INTERVAL}s")
+
+    # Initial delay to ensure we have sensor data
+    time.sleep(10)
+
+    while True:
+        try:
+            send_slack_notification()
+        except Exception as e:
+            logging.error(f"Error in slack notification loop: {e}")
+
+        time.sleep(SLACK_NOTIFICATION_INTERVAL)
+
+@app.route('/api/notify-slack', methods=['POST'])
+@require_token
+def notify_slack_endpoint():
+    """Manual trigger for Slack notification"""
+    if not SLACK_WEBHOOK_URL:
+        return jsonify({
+            'success': False,
+            'error': 'Slack webhook URL not configured'
+        }), 503
+
+    result = send_slack_notification()
+
+    if result:
+        return jsonify({'success': True, 'message': 'Notification sent'})
+    else:
+        return jsonify({'success': False, 'message': 'Failed to send notification'}), 500
+
 if __name__ == '__main__':
     # Start the background thread to update sensor data
     logging.info("Starting temperature monitor service")
     sensor_thread = threading.Thread(target=update_sensor_data, daemon=True)
     sensor_thread.start()
     
+    # Start the Slack notification background thread if URL is configured
+    if SLACK_WEBHOOK_URL:
+        slack_thread = threading.Thread(target=slack_notification_loop, daemon=True)
+        slack_thread.start()
+    else:
+        logging.info("Slack webhook URL not provided, Slack notifications disabled")
+
     # Give the thread a moment to get initial readings
     time.sleep(2)
     
