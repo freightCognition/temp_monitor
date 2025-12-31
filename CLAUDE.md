@@ -14,8 +14,8 @@ This is a **Server Room Temperature Monitor** built on Raspberry Pi with Sense H
 
 ```
 temp_monitor/
-├── temp_monitor.py           # Main Flask application (367 lines)
-├── generate_token.py         # Token generation utility (56 lines)
+├── temp_monitor.py           # Main Flask application
+├── webhook_service.py        # Webhook service for Slack notifications
 ├── requirements.txt          # Python dependencies
 ├── .env.example             # Example environment variables
 ├── .env                      # Environment variables (gitignored)
@@ -46,15 +46,8 @@ temp_monitor/
 - **Lines 282-289:** `favicon()` - favicon serving endpoint with fallback handling
 - **Lines 291-301:** `api_temp()` - protected API endpoint for temperature data
 - **Lines 303-315:** `api_raw()` - protected debugging endpoint for raw sensor data
-- **Lines 317-345:** `generate_new_token()` - API endpoint to regenerate bearer tokens
-- **Lines 347-355:** `verify_token()` - token validation endpoint
-- **Lines 357-367:** Main execution block - starts sensor thread and Flask server
-
-#### `generate_token.py` (Token Management)
-- Standalone utility script to generate secure bearer tokens
-- Uses `secrets.token_hex(32)` for cryptographically secure random tokens
-- Manages `.env` file updates while preserving other environment variables
-- Can be run independently or called via API
+- **Lines 317-325:** `verify_token()` - token validation endpoint
+- **Lines 327-end:** Webhook management endpoints and main execution block
 
 ---
 
@@ -140,10 +133,10 @@ Configuration via environment variables:
      ```bash
      cp .env.example .env
      ```
-  - Generate bearer token: `python generate_token.py` (or manually set in `.env`)
+  - Generate a bearer token and add it to `.env`: `python3 -c "import secrets; print(secrets.token_hex(32))"`
   - Update environment variables in `.env`:
     - `LOG_FILE`: Path to log file
-    - `BEARER_TOKEN`: API authentication token (auto-generated if omitted)
+    - `BEARER_TOKEN`: API authentication token (required - generate with `python3 -c "import secrets; print(secrets.token_hex(32))"`)
     - Static assets are located in `static/`; replace those files directly if you want custom branding
 
 4. **Running Locally:**
@@ -168,9 +161,6 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/raw
 
 # Verify token
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/verify-token
-
-# Generate new token
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/generate-token
 ```
 
 ### Git Workflow
@@ -464,7 +454,7 @@ Areas where improvements could be made:
 
 ### File Locations
 - Main app: `temp_monitor.py`
-- Token utility: `generate_token.py`
+- Webhook service: `webhook_service.py`
 - Dependencies: `requirements.txt`
 - Config: `.env` (not in git)
 - Docs: `README.md`, `CLAUDE.md`
@@ -479,7 +469,11 @@ Areas where improvements could be made:
 - `GET /api/temp` - Current readings (protected)
 - `GET /api/raw` - Raw sensor data (protected)
 - `GET /api/verify-token` - Token validation (protected)
-- `POST /api/generate-token` - Generate new token (protected)
+- `GET /api/webhook/config` - Get webhook configuration (protected)
+- `PUT /api/webhook/config` - Update webhook configuration (protected)
+- `POST /api/webhook/test` - Send test webhook (protected)
+- `POST /api/webhook/enable` - Enable webhooks (protected)
+- `POST /api/webhook/disable` - Disable webhooks (protected)
 
 ### Configuration
 - Port: 8080

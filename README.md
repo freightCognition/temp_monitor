@@ -76,11 +76,23 @@ pip install flask
 
    Static assets (logo and favicon) are served from the repository's `static/` directory by default. Replace the files there if you want to customize the images.
 
-3. Generate a bearer token:
+3. Generate a bearer token and add it to `.env`:
    ```bash
-   python generate_token.py
+   # Generate a secure token
+   python3 -c "import secrets; print(secrets.token_hex(32))"
+
+   # Copy the output and add it to your .env file:
+   # BEARER_TOKEN=<your_generated_token>
    ```
-   This will create a secure token and save it to `.env`.
+
+   **Note:** If `BEARER_TOKEN` is not set in `.env`, the app will:
+   1. Log an error
+   2. Print instructions for generating a token:
+   ```
+   ERROR: BEARER_TOKEN environment variable is required.
+   Generate a token with: python3 -c "import secrets; print(secrets.token_hex(32))"
+   Then add it to your .env file: BEARER_TOKEN=<your_token>
+   ```
 
 4. Set up as a service (for automatic startup):
    Create a systemd service file:
@@ -161,15 +173,19 @@ ic/` before building the image or mount your own `static/` directory at runtime.
    docker-compose down
    ```
 
-### Generating Bearer Token in Container
+### Setting Bearer Token for Docker
 
-To generate or regenerate the bearer token inside the container:
+Before starting the container, ensure you have a bearer token in your `.env` file:
 
 ```bash
-docker-compose exec temp-monitor python generate_token.py
+# Generate a secure token
+python3 -c "import secrets; print(secrets.token_hex(32))"
+
+# Add to .env file:
+# BEARER_TOKEN=<your_generated_token>
 ```
 
-The token will be saved to the `.env` file in your project directory (which is mounted as a volume).
+The `.env` file is mounted as a volume, so the token will be available to the container.
 
 ### Building Docker Image Manually
 
@@ -329,21 +345,23 @@ curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://your-server:8080/api/temp
 - `/api/temp` - Get current temperature and humidity data
 - `/api/raw` - Get raw temperature data (including CPU temperature)
 - `/api/verify-token` - Verify if your token is valid
-- `/api/generate-token` - Generate a new token (requires existing valid token)
 
-## Regenerating Tokens
+## Changing the Bearer Token
 
-You can regenerate the token in two ways:
+To change the bearer token, generate a new one and update your `.env` file:
 
-1. Using the script:
-   ```
-   python generate_token.py
-   ```
+```bash
+# Generate a new token
+python3 -c "import secrets; print(secrets.token_hex(32))"
 
-2. Using the API (requires existing valid token):
-   ```
-   curl -X POST -H "Authorization: Bearer YOUR_CURRENT_TOKEN" http://your-server:8080/api/generate-token
-   ```
+# Update .env file with the new token:
+# BEARER_TOKEN=<your_new_token>
+
+# Restart the service
+sudo systemctl restart temp_monitor  # for systemd
+# or
+docker-compose restart  # for Docker
+```
 
 ## Security Notes
 

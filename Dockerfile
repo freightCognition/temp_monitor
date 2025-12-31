@@ -26,7 +26,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY temp_monitor.py generate_token.py ./
+COPY temp_monitor.py webhook_service.py sense_hat.py ./
 COPY static ./static
 
 # Create directories for volumes
