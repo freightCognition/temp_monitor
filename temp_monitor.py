@@ -5,9 +5,9 @@ import logging
 import threading
 import statistics
 import os
-import secrets
 import functools
 from dotenv import load_dotenv
+from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 
 # Load environment variables from .env file
 load_dotenv()
@@ -48,25 +48,63 @@ current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
 
-# Get bearer token from environment or generate a new one if not present
+# Periodic status update configuration
+status_update_enabled = os.getenv('STATUS_UPDATE_ENABLED', 'false').lower() == 'true'
+status_update_interval = int(os.getenv('STATUS_UPDATE_INTERVAL', '3600'))
+last_status_update = None  # Track time of last status update
+
+# Validate status update interval (must be >= sampling_interval)
+if status_update_enabled and status_update_interval < sampling_interval:
+    logging.warning(
+        f"STATUS_UPDATE_INTERVAL ({status_update_interval}s) is less than "
+        f"sampling_interval ({sampling_interval}s). Using sampling_interval as minimum."
+    )
+    status_update_interval = sampling_interval
+
+# Initialize webhook service
+webhook_service = None
+slack_webhook_url = os.getenv('SLACK_WEBHOOK_URL')
+if slack_webhook_url:
+    webhook_config = WebhookConfig(
+        url=slack_webhook_url,
+        enabled=os.getenv('WEBHOOK_ENABLED', 'true').lower() == 'true',
+        retry_count=int(os.getenv('WEBHOOK_RETRY_COUNT', '3')),
+        retry_delay=int(os.getenv('WEBHOOK_RETRY_DELAY', '5')),
+        timeout=int(os.getenv('WEBHOOK_TIMEOUT', '10'))
+    )
+
+    alert_thresholds = AlertThresholds(
+        temp_min_c=float(os.getenv('ALERT_TEMP_MIN_C', '15.0')) if os.getenv('ALERT_TEMP_MIN_C') else None,
+        temp_max_c=float(os.getenv('ALERT_TEMP_MAX_C', '27.0')) if os.getenv('ALERT_TEMP_MAX_C') else None,
+        humidity_min=float(os.getenv('ALERT_HUMIDITY_MIN', '30.0')) if os.getenv('ALERT_HUMIDITY_MIN') else None,
+        humidity_max=float(os.getenv('ALERT_HUMIDITY_MAX', '70.0')) if os.getenv('ALERT_HUMIDITY_MAX') else None
+    )
+
+    webhook_service = WebhookService(webhook_config, alert_thresholds)
+    logging.info("Webhook service initialized")
+else:
+    logging.info("Webhook service not configured (no SLACK_WEBHOOK_URL)")
+
+# Initialize status update timer
+if status_update_enabled and webhook_service:
+    if os.getenv('STATUS_UPDATE_ON_STARTUP', 'false').lower() == 'true':
+        last_status_update = None  # Will trigger immediately on first loop
+        logging.info("Periodic status updates enabled (will send on startup)")
+    else:
+        last_status_update = time.time()  # Start timer from now
+        logging.info(f"Periodic status updates enabled (interval: {status_update_interval}s)")
+elif status_update_enabled and not webhook_service:
+    logging.warning("STATUS_UPDATE_ENABLED is true but webhook service not configured")
+
+# Get bearer token from environment (required)
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
 if not BEARER_TOKEN:
-    # Generate a new token if one doesn't exist
-    BEARER_TOKEN = secrets.token_hex(32)  # 64 character hex string
-    logging.info("Generated new bearer token")
-    
-    # Save the token to .env file
-    try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={BEARER_TOKEN}\n")
-        logging.info("Saved bearer token to .env file")
-        print(f"New bearer token generated and saved to .env file: {BEARER_TOKEN}")
-    except Exception as e:
-        logging.error(f"Failed to save bearer token to .env file: {e}")
-        print(f"WARNING: Generated bearer token but failed to save to .env file: {e}")
-        print(f"Please manually add this token to your .env file: BEARER_TOKEN={BEARER_TOKEN}")
+    logging.error("BEARER_TOKEN not set in environment. API endpoints will not work.")
+    print("ERROR: BEARER_TOKEN environment variable is required.")
+    print("Generate a token with: python3 -c \"import secrets; print(secrets.token_hex(32))\"")
+    print("Then add it to your .env file: BEARER_TOKEN=<your_token>")
 else:
-    logging.info("Using bearer token from .env file")
+    logging.info("Bearer token loaded from environment")
 
 def require_token(f):
     """Decorator to require bearer token authentication for API endpoints"""
@@ -161,24 +199,64 @@ def get_humidity():
 def update_sensor_data():
     """Background thread function to update sensor data periodically"""
     global current_temp, current_humidity, last_updated
-    
+
     while True:
         try:
             current_temp = get_compensated_temperature()
             current_humidity = get_humidity()
             last_updated = time.strftime("%Y-%m-%d %H:%M:%S")
-            
+
             cpu_temp_val = get_cpu_temperature()
             cpu_temp_display = f"{cpu_temp_val}°C" if cpu_temp_val is not None else "N/A"
             logging.info(
                 f"Temperature: {current_temp}°C, Humidity: {current_humidity}%, CPU Temp: {cpu_temp_display}"
             )
-            
+
+            # Check thresholds and send alerts via webhook
+            if webhook_service:
+                try:
+                    alerts_sent = webhook_service.check_and_alert(
+                        current_temp, current_humidity, last_updated
+                    )
+                    if alerts_sent:
+                        logging.info(f"Webhook alerts sent: {list(alerts_sent.keys())}")
+                except Exception as webhook_error:
+                    logging.error(f"Error sending webhook alert: {webhook_error}")
+
+            # Send periodic status updates if enabled
+            if status_update_enabled and webhook_service:
+                global last_status_update
+                current_time = time.time()
+
+                # Check if it's time for a status update
+                should_send_update = (
+                    last_status_update is None or  # First update or startup update
+                    (current_time - last_status_update) >= status_update_interval
+                )
+
+                if should_send_update:
+                    try:
+                        cpu_temp = get_cpu_temperature()
+                        success = webhook_service.send_status_update(
+                            current_temp, current_humidity, cpu_temp, last_updated
+                        )
+
+                        if success:
+                            logging.info("Periodic status update sent successfully")
+                        else:
+                            logging.warning("Periodic status update failed, will retry at next interval")
+
+                    except Exception as update_error:
+                        logging.error(f"Error sending periodic status update: {update_error}")
+                    finally:
+                        # Always update timestamp to prevent retry storms
+                        last_status_update = current_time
+
             # Display temperature on Sense HAT LED matrix
             temp_f = round((current_temp * 9/5) + 32, 1)
             message = f"Temp: {temp_f}F"
             sense.show_message(message)
-            
+
             # Sleep for the specified interval
             time.sleep(sampling_interval)
         except Exception as e:
@@ -295,36 +373,6 @@ def api_raw():
         'timestamp': last_updated
     })
 
-# Add a token generation endpoint (protected by existing token)
-@app.route('/api/generate-token', methods=['POST'])
-@require_token
-def generate_new_token():
-    """Generate a new bearer token (requires existing token to access)"""
-    global BEARER_TOKEN
-    
-    # Generate new token
-    new_token = secrets.token_hex(32)
-    
-    # Save to .env file
-    try:
-        with open('.env', 'w') as env_file:
-            env_file.write(f"BEARER_TOKEN={new_token}\n")
-        
-        # Update the global token
-        BEARER_TOKEN = new_token
-        logging.info("Generated and saved new bearer token")
-        
-        return jsonify({
-            'message': 'New bearer token generated successfully',
-            'token': new_token
-        })
-    except Exception as e:
-        logging.error(f"Failed to save new bearer token: {e}")
-        return jsonify({
-            'error': 'Failed to save new token',
-            'details': str(e)
-        }), 500
-
 # Add an endpoint to check if token is valid
 @app.route('/api/verify-token', methods=['GET'])
 @require_token
@@ -333,6 +381,174 @@ def verify_token():
     return jsonify({
         'valid': True,
         'message': 'Token is valid'
+    })
+
+# Webhook management endpoints
+@app.route('/api/webhook/config', methods=['GET'])
+@require_token
+def get_webhook_config():
+    """Get current webhook configuration"""
+    if not webhook_service or not webhook_service.webhook_config:
+        return jsonify({
+            'enabled': False,
+            'message': 'Webhook not configured'
+        })
+
+    config = webhook_service.webhook_config
+    thresholds = webhook_service.alert_thresholds
+
+    return jsonify({
+        'webhook': {
+            'url': config.url,
+            'enabled': config.enabled,
+            'retry_count': config.retry_count,
+            'retry_delay': config.retry_delay,
+            'timeout': config.timeout
+        },
+        'thresholds': {
+            'temp_min_c': thresholds.temp_min_c,
+            'temp_max_c': thresholds.temp_max_c,
+            'humidity_min': thresholds.humidity_min,
+            'humidity_max': thresholds.humidity_max
+        }
+    })
+
+@app.route('/api/webhook/config', methods=['PUT'])
+@require_token
+def update_webhook_config():
+    """Update webhook configuration"""
+    global webhook_service
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    try:
+        # Update webhook config if provided
+        if 'webhook' in data:
+            webhook_data = data['webhook']
+
+            # If webhook service doesn't exist, create it
+            if not webhook_service:
+                if 'url' not in webhook_data:
+                    return jsonify({'error': 'URL required to create webhook config'}), 400
+
+                webhook_service = WebhookService()
+
+            config = WebhookConfig(
+                url=webhook_data.get('url', webhook_service.webhook_config.url if webhook_service.webhook_config else ''),
+                enabled=webhook_data.get('enabled', True),
+                retry_count=webhook_data.get('retry_count', 3),
+                retry_delay=webhook_data.get('retry_delay', 5),
+                timeout=webhook_data.get('timeout', 10)
+            )
+            webhook_service.set_webhook_config(config)
+
+        # Update thresholds if provided
+        if 'thresholds' in data:
+            threshold_data = data['thresholds']
+            thresholds = AlertThresholds(
+                temp_min_c=threshold_data.get('temp_min_c'),
+                temp_max_c=threshold_data.get('temp_max_c'),
+                humidity_min=threshold_data.get('humidity_min'),
+                humidity_max=threshold_data.get('humidity_max')
+            )
+
+            if not webhook_service:
+                webhook_service = WebhookService(alert_thresholds=thresholds)
+            else:
+                webhook_service.set_alert_thresholds(thresholds)
+
+        return jsonify({
+            'message': 'Webhook configuration updated successfully',
+            'config': {
+                'webhook': {
+                    'url': webhook_service.webhook_config.url if webhook_service.webhook_config else None,
+                    'enabled': webhook_service.webhook_config.enabled if webhook_service.webhook_config else False
+                },
+                'thresholds': {
+                    'temp_min_c': webhook_service.alert_thresholds.temp_min_c,
+                    'temp_max_c': webhook_service.alert_thresholds.temp_max_c,
+                    'humidity_min': webhook_service.alert_thresholds.humidity_min,
+                    'humidity_max': webhook_service.alert_thresholds.humidity_max
+                }
+            }
+        })
+
+    except Exception as e:
+        logging.error(f"Error updating webhook config: {e}")
+        return jsonify({
+            'error': 'Failed to update webhook configuration',
+            'details': str(e)
+        }), 500
+
+@app.route('/api/webhook/test', methods=['POST'])
+@require_token
+def test_webhook():
+    """Send a test webhook message"""
+    if not webhook_service or not webhook_service.webhook_config:
+        return jsonify({
+            'error': 'Webhook not configured'
+        }), 400
+
+    try:
+        cpu_temp = get_cpu_temperature()
+        success = webhook_service.send_status_update(
+            current_temp,
+            current_humidity,
+            cpu_temp,
+            last_updated
+        )
+
+        if success:
+            return jsonify({
+                'message': 'Test webhook sent successfully',
+                'timestamp': last_updated
+            })
+        else:
+            return jsonify({
+                'error': 'Failed to send test webhook'
+            }), 500
+
+    except Exception as e:
+        logging.error(f"Error sending test webhook: {e}")
+        return jsonify({
+            'error': 'Failed to send test webhook',
+            'details': str(e)
+        }), 500
+
+@app.route('/api/webhook/enable', methods=['POST'])
+@require_token
+def enable_webhook():
+    """Enable webhook notifications"""
+    if not webhook_service or not webhook_service.webhook_config:
+        return jsonify({
+            'error': 'Webhook not configured'
+        }), 400
+
+    webhook_service.webhook_config.enabled = True
+    logging.info("Webhook notifications enabled")
+
+    return jsonify({
+        'message': 'Webhook notifications enabled',
+        'enabled': True
+    })
+
+@app.route('/api/webhook/disable', methods=['POST'])
+@require_token
+def disable_webhook():
+    """Disable webhook notifications"""
+    if not webhook_service or not webhook_service.webhook_config:
+        return jsonify({
+            'error': 'Webhook not configured'
+        }), 400
+
+    webhook_service.webhook_config.enabled = False
+    logging.info("Webhook notifications disabled")
+
+    return jsonify({
+        'message': 'Webhook notifications disabled',
+        'enabled': False
     })
 
 if __name__ == '__main__':
