@@ -160,9 +160,8 @@ def test_configuration():
     service = WebhookService(alert_thresholds=thresholds)
 
     # Check that disabled thresholds don't trigger
-    service._lock.acquire()
-    service.last_alert_time.clear()
-    service._lock.release()
+    with service._lock:
+        service.last_alert_time.clear()
 
     alerts = service.check_and_alert(10.0, 25.0, "2025-12-30 12:00:00")
     assert 'temp_low' not in alerts, "Disabled temp_low should not trigger"
