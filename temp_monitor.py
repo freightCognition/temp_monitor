@@ -140,10 +140,12 @@ elif status_update_enabled and not webhook_service:
 # Get bearer token from environment (required)
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
 if not BEARER_TOKEN:
-    logging.error("BEARER_TOKEN not set in environment. API endpoints will not work.")
+    logging.critical("BEARER_TOKEN not set in environment. Exiting.")
     print("ERROR: BEARER_TOKEN environment variable is required.")
     print("Generate a token with: python3 -c \"import secrets; print(secrets.token_hex(32))\"")
     print("Then add it to your .env file: BEARER_TOKEN=<your_token>")
+    import sys
+    sys.exit(1)
 else:
     logging.info("Bearer token loaded from environment")
 

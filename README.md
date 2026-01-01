@@ -357,7 +357,7 @@ The web interface uses an embedded HTML template with CSS. You can customize the
 The application uses environment variables for configuration. Create a `.env` file (copy from `.env.example`) with these settings:
 
 - **LOG_FILE**: Path to the log file (defaults to `temp_monitor.log`)
-- **BEARER_TOKEN**: API authentication token (auto-generated if not provided)
+- **BEARER_TOKEN**: API authentication token (required, generate with `python3 -c "import secrets; print(secrets.token_hex(32))"`)
 - **Static assets**: Images are served from the `static/` directory. Replace `static/My-img8bit-1com-Effect.gif` or `static/f
 avicon.ico` if you need custom artwork.
 
