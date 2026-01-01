@@ -72,7 +72,7 @@ def send_webhook(endpoint, payload, use_timestamp=True):
         print(f"Timestamp: {timestamp}")
     print('='*60)
 
-    response = requests.post(url, data=body, headers=headers)
+    response = requests.post(url, data=body, headers=headers, timeout=10)
 
     print(f"\nResponse Status: {response.status_code}")
     print(f"Response Body: {response.text}")
