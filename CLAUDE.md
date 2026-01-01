@@ -113,8 +113,8 @@ cp .env.example .env
 python temp_monitor.py
 
 # Run with Docker Compose (includes ARM build support)
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 ### Testing

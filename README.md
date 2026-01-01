@@ -67,7 +67,7 @@ python temp_monitor.py
 ./start_production.sh
 
 # Docker
-docker-compose up -d
+docker compose up -d
 ```
 
 Access the dashboard at `http://[raspberry-pi-ip]:8080`
@@ -216,13 +216,13 @@ cp .env.example .env
 # Edit .env with your settings
 
 # Build and run
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop
-docker-compose down
+docker compose down
 ```
 
 **Note**: Requires privileged mode for I2C/hardware access.

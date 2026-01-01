@@ -43,13 +43,13 @@ sudo usermod -aG docker pi
 #### Deployment
 ```bash
 cd /path/to/temp_monitor
-docker-compose up -d
+docker compose up -d
 ```
 
 #### Monitoring
 ```bash
 # View logs
-docker-compose logs -f temp-monitor
+docker compose logs -f temp-monitor
 
 # Check health
 curl http://localhost:8080/health
@@ -60,7 +60,7 @@ curl http://localhost:8080/metrics
 
 #### Stop Service
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### Option 2: Systemd Service Deployment
@@ -208,7 +208,7 @@ Response includes:
 
 #### Docker
 ```bash
-docker-compose logs -f temp-monitor
+docker compose logs -f temp-monitor
 ```
 
 #### Systemd
@@ -270,7 +270,7 @@ The application communicates with Sense HAT via I2C. Performance factors:
 **Check logs:**
 ```bash
 # Docker
-docker-compose logs temp-monitor
+docker compose logs temp-monitor
 
 # Systemd
 sudo journalctl -u temp-monitor.service -n 50
