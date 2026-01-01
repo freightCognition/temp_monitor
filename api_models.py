@@ -120,6 +120,31 @@ test_response = webhooks_ns.model('TestResponse', {
 })
 
 
+def validate_webhook_config(webhook: dict) -> tuple:
+    """
+    Validate webhook configuration field ranges.
+
+    Args:
+        webhook: Dictionary with webhook config values
+
+    Returns:
+        Tuple of (is_valid: bool, error_message: str)
+    """
+    if 'retry_count' in webhook and webhook['retry_count'] is not None:
+        if not (1 <= webhook['retry_count'] <= 10):
+            return False, 'retry_count must be between 1 and 10'
+
+    if 'retry_delay' in webhook and webhook['retry_delay'] is not None:
+        if not (1 <= webhook['retry_delay'] <= 60):
+            return False, 'retry_delay must be between 1 and 60 seconds'
+
+    if 'timeout' in webhook and webhook['timeout'] is not None:
+        if not (5 <= webhook['timeout'] <= 120):
+            return False, 'timeout must be between 5 and 120 seconds'
+
+    return True, ''
+
+
 def validate_thresholds(thresholds: dict) -> tuple:
     """
     Validate threshold relationships (cross-field validation).

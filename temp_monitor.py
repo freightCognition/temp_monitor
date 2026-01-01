@@ -12,7 +12,7 @@ from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 from api_models import (
     webhooks_ns, webhook_config_update, webhook_config_response,
     error_response, success_response, message_response, test_response,
-    validate_thresholds
+    validate_thresholds, validate_webhook_config
 )
 
 # Load environment variables from .env file
@@ -470,7 +470,13 @@ class WebhookConfigResource(Resource):
 
         data = webhooks_ns.payload
 
-        # Cross-field validation for thresholds (outside try/except to return proper 400)
+        # Validate webhook config field ranges
+        if 'webhook' in data and data['webhook']:
+            is_valid, error_msg = validate_webhook_config(data['webhook'])
+            if not is_valid:
+                webhooks_ns.abort(400, error_msg)
+
+        # Cross-field validation for thresholds
         if 'thresholds' in data and data['thresholds']:
             is_valid, error_msg = validate_thresholds(data['thresholds'])
             if not is_valid:
