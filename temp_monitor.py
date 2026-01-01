@@ -1,5 +1,6 @@
 from sense_hat import SenseHat
 from flask import Flask, jsonify, render_template_string, request, abort
+from flask_restx import Api, Resource
 import time
 import logging
 import threading
@@ -8,6 +9,11 @@ import os
 import functools
 from dotenv import load_dotenv
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds
+from api_models import (
+    webhooks_ns, webhook_config_update, webhook_config_response,
+    error_response, success_response, message_response, test_response,
+    validate_thresholds
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,6 +47,28 @@ except Exception as e:
     raise
 
 app = Flask(__name__)
+
+# Initialize Flask-RESTX API with Swagger documentation
+api = Api(
+    app,
+    version='1.0',
+    title='Temperature Monitor API',
+    description='Server room environmental monitoring API with webhook notifications',
+    doc='/docs',
+    authorizations={
+        'bearer': {
+            'type': 'apiKey',
+            'in': 'header',
+            'name': 'Authorization',
+            'description': 'Bearer token authentication. Format: "Bearer <token>"'
+        }
+    }
+    # Note: security='bearer' removed to allow public Swagger UI access at /docs
+    # Individual endpoints are protected via @webhooks_ns.doc(security='bearer') decorators
+)
+
+# Register the webhooks namespace
+api.add_namespace(webhooks_ns, path='/api/webhook')
 
 # Global variables to store sensor data
 current_temp = 0
@@ -383,173 +411,212 @@ def verify_token():
         'message': 'Token is valid'
     })
 
-# Webhook management endpoints
-@app.route('/api/webhook/config', methods=['GET'])
-@require_token
-def get_webhook_config():
-    """Get current webhook configuration"""
-    if not webhook_service or not webhook_service.webhook_config:
-        return jsonify({
-            'enabled': False,
-            'message': 'Webhook not configured'
-        })
+# Webhook management endpoints using Flask-RESTX
+@webhooks_ns.route('/config')
+class WebhookConfigResource(Resource):
+    """Webhook configuration management"""
 
-    config = webhook_service.webhook_config
-    thresholds = webhook_service.alert_thresholds
-
-    return jsonify({
-        'webhook': {
-            'url': config.url,
-            'enabled': config.enabled,
-            'retry_count': config.retry_count,
-            'retry_delay': config.retry_delay,
-            'timeout': config.timeout
-        },
-        'thresholds': {
-            'temp_min_c': thresholds.temp_min_c,
-            'temp_max_c': thresholds.temp_max_c,
-            'humidity_min': thresholds.humidity_min,
-            'humidity_max': thresholds.humidity_max
-        }
-    })
-
-@app.route('/api/webhook/config', methods=['PUT'])
-@require_token
-def update_webhook_config():
-    """Update webhook configuration"""
-    global webhook_service
-
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-
-    try:
-        # Update webhook config if provided
-        if 'webhook' in data:
-            webhook_data = data['webhook']
-
-            # If webhook service doesn't exist, create it
-            if not webhook_service:
-                if 'url' not in webhook_data:
-                    return jsonify({'error': 'URL required to create webhook config'}), 400
-
-                webhook_service = WebhookService()
-
-            config = WebhookConfig(
-                url=webhook_data.get('url', webhook_service.webhook_config.url if webhook_service.webhook_config else ''),
-                enabled=webhook_data.get('enabled', True),
-                retry_count=webhook_data.get('retry_count', 3),
-                retry_delay=webhook_data.get('retry_delay', 5),
-                timeout=webhook_data.get('timeout', 10)
-            )
-            webhook_service.set_webhook_config(config)
-
-        # Update thresholds if provided
-        if 'thresholds' in data:
-            threshold_data = data['thresholds']
-            thresholds = AlertThresholds(
-                temp_min_c=threshold_data.get('temp_min_c'),
-                temp_max_c=threshold_data.get('temp_max_c'),
-                humidity_min=threshold_data.get('humidity_min'),
-                humidity_max=threshold_data.get('humidity_max')
-            )
-
-            if not webhook_service:
-                webhook_service = WebhookService(alert_thresholds=thresholds)
-            else:
-                webhook_service.set_alert_thresholds(thresholds)
-
-        return jsonify({
-            'message': 'Webhook configuration updated successfully',
-            'config': {
+    @webhooks_ns.doc(security='bearer')
+    @webhooks_ns.marshal_with(webhook_config_response)
+    @webhooks_ns.response(200, 'Success', webhook_config_response)
+    @require_token
+    def get(self):
+        """Get current webhook configuration"""
+        if not webhook_service or not webhook_service.webhook_config:
+            return {
                 'webhook': {
-                    'url': webhook_service.webhook_config.url if webhook_service.webhook_config else None,
-                    'enabled': webhook_service.webhook_config.enabled if webhook_service.webhook_config else False
+                    'url': None,
+                    'enabled': False,
+                    'retry_count': 3,
+                    'retry_delay': 5,
+                    'timeout': 10
                 },
                 'thresholds': {
-                    'temp_min_c': webhook_service.alert_thresholds.temp_min_c,
-                    'temp_max_c': webhook_service.alert_thresholds.temp_max_c,
-                    'humidity_min': webhook_service.alert_thresholds.humidity_min,
-                    'humidity_max': webhook_service.alert_thresholds.humidity_max
+                    'temp_min_c': None,
+                    'temp_max_c': None,
+                    'humidity_min': None,
+                    'humidity_max': None
                 }
             }
-        })
 
-    except Exception as e:
-        logging.error(f"Error updating webhook config: {e}")
-        return jsonify({
-            'error': 'Failed to update webhook configuration',
-            'details': str(e)
-        }), 500
+        config = webhook_service.webhook_config
+        thresholds = webhook_service.alert_thresholds
 
-@app.route('/api/webhook/test', methods=['POST'])
-@require_token
-def test_webhook():
-    """Send a test webhook message"""
-    if not webhook_service or not webhook_service.webhook_config:
-        return jsonify({
-            'error': 'Webhook not configured'
-        }), 400
+        return {
+            'webhook': {
+                'url': config.url,
+                'enabled': config.enabled,
+                'retry_count': config.retry_count,
+                'retry_delay': config.retry_delay,
+                'timeout': config.timeout
+            },
+            'thresholds': {
+                'temp_min_c': thresholds.temp_min_c,
+                'temp_max_c': thresholds.temp_max_c,
+                'humidity_min': thresholds.humidity_min,
+                'humidity_max': thresholds.humidity_max
+            }
+        }
 
-    try:
-        cpu_temp = get_cpu_temperature()
-        success = webhook_service.send_status_update(
-            current_temp,
-            current_humidity,
-            cpu_temp,
-            last_updated
-        )
+    @webhooks_ns.doc(security='bearer')
+    @webhooks_ns.expect(webhook_config_update, validate=True)
+    @webhooks_ns.marshal_with(success_response)
+    @webhooks_ns.response(400, 'Validation Error', error_response)
+    @webhooks_ns.response(500, 'Server Error', error_response)
+    @require_token
+    def put(self):
+        """Update webhook configuration with validation"""
+        global webhook_service
 
-        if success:
-            return jsonify({
-                'message': 'Test webhook sent successfully',
-                'timestamp': last_updated
-            })
-        else:
-            return jsonify({
-                'error': 'Failed to send test webhook'
-            }), 500
+        data = webhooks_ns.payload
 
-    except Exception as e:
-        logging.error(f"Error sending test webhook: {e}")
-        return jsonify({
-            'error': 'Failed to send test webhook',
-            'details': str(e)
-        }), 500
+        # Cross-field validation for thresholds (outside try/except to return proper 400)
+        if 'thresholds' in data and data['thresholds']:
+            is_valid, error_msg = validate_thresholds(data['thresholds'])
+            if not is_valid:
+                webhooks_ns.abort(400, error_msg)
 
-@app.route('/api/webhook/enable', methods=['POST'])
-@require_token
-def enable_webhook():
+        # Validate URL is provided when creating new webhook service
+        if 'webhook' in data and data['webhook']:
+            webhook_data = data['webhook']
+            if not webhook_service and 'url' not in webhook_data:
+                webhooks_ns.abort(400, 'URL required to create webhook config')
+
+        try:
+            # Update webhook config if provided
+            if 'webhook' in data and data['webhook']:
+                webhook_data = data['webhook']
+
+                # If webhook service doesn't exist, create it
+                if not webhook_service:
+                    webhook_service = WebhookService()
+
+                config = WebhookConfig(
+                    url=webhook_data.get('url', ''),
+                    enabled=webhook_data.get('enabled', True),
+                    retry_count=webhook_data.get('retry_count', 3),
+                    retry_delay=webhook_data.get('retry_delay', 5),
+                    timeout=webhook_data.get('timeout', 10)
+                )
+                webhook_service.set_webhook_config(config)
+
+            # Update thresholds if provided
+            if 'thresholds' in data and data['thresholds']:
+                threshold_data = data['thresholds']
+                thresholds = AlertThresholds(
+                    temp_min_c=threshold_data.get('temp_min_c'),
+                    temp_max_c=threshold_data.get('temp_max_c'),
+                    humidity_min=threshold_data.get('humidity_min'),
+                    humidity_max=threshold_data.get('humidity_max')
+                )
+
+                if not webhook_service:
+                    webhook_service = WebhookService(alert_thresholds=thresholds)
+                else:
+                    webhook_service.set_alert_thresholds(thresholds)
+
+            return {
+                'message': 'Webhook configuration updated successfully',
+                'config': {
+                    'webhook': {
+                        'url': webhook_service.webhook_config.url if webhook_service and webhook_service.webhook_config else None,
+                        'enabled': webhook_service.webhook_config.enabled if webhook_service and webhook_service.webhook_config else False,
+                        'retry_count': webhook_service.webhook_config.retry_count if webhook_service and webhook_service.webhook_config else 3,
+                        'retry_delay': webhook_service.webhook_config.retry_delay if webhook_service and webhook_service.webhook_config else 5,
+                        'timeout': webhook_service.webhook_config.timeout if webhook_service and webhook_service.webhook_config else 10
+                    },
+                    'thresholds': {
+                        'temp_min_c': webhook_service.alert_thresholds.temp_min_c if webhook_service else None,
+                        'temp_max_c': webhook_service.alert_thresholds.temp_max_c if webhook_service else None,
+                        'humidity_min': webhook_service.alert_thresholds.humidity_min if webhook_service else None,
+                        'humidity_max': webhook_service.alert_thresholds.humidity_max if webhook_service else None
+                    }
+                }
+            }
+
+        except Exception as e:
+            logging.error(f"Error updating webhook config: {e}")
+            return {'error': 'Failed to update webhook configuration', 'details': str(e)}, 500
+
+
+@webhooks_ns.route('/test')
+class WebhookTestResource(Resource):
+    """Test webhook functionality"""
+
+    @webhooks_ns.doc(security='bearer')
+    @webhooks_ns.marshal_with(test_response)
+    @webhooks_ns.response(400, 'Webhook not configured', error_response)
+    @webhooks_ns.response(500, 'Server Error', error_response)
+    @require_token
+    def post(self):
+        """Send a test webhook message"""
+        if not webhook_service or not webhook_service.webhook_config:
+            webhooks_ns.abort(400, 'Webhook not configured')
+
+        try:
+            cpu_temp = get_cpu_temperature()
+            success = webhook_service.send_status_update(
+                current_temp,
+                current_humidity,
+                cpu_temp,
+                last_updated
+            )
+
+            if success:
+                return {
+                    'message': 'Test webhook sent successfully',
+                    'timestamp': last_updated
+                }
+            else:
+                webhooks_ns.abort(500, 'Failed to send test webhook')
+
+        except Exception as e:
+            logging.error(f"Error sending test webhook: {e}")
+            webhooks_ns.abort(500, f'Failed to send test webhook: {e}')
+
+
+@webhooks_ns.route('/enable')
+class WebhookEnableResource(Resource):
     """Enable webhook notifications"""
-    if not webhook_service or not webhook_service.webhook_config:
-        return jsonify({
-            'error': 'Webhook not configured'
-        }), 400
 
-    webhook_service.webhook_config.enabled = True
-    logging.info("Webhook notifications enabled")
+    @webhooks_ns.doc(security='bearer')
+    @webhooks_ns.marshal_with(message_response)
+    @webhooks_ns.response(400, 'Webhook not configured', error_response)
+    @require_token
+    def post(self):
+        """Enable webhook notifications"""
+        if not webhook_service or not webhook_service.webhook_config:
+            webhooks_ns.abort(400, 'Webhook not configured')
 
-    return jsonify({
-        'message': 'Webhook notifications enabled',
-        'enabled': True
-    })
+        webhook_service.webhook_config.enabled = True
+        logging.info("Webhook notifications enabled")
 
-@app.route('/api/webhook/disable', methods=['POST'])
-@require_token
-def disable_webhook():
+        return {
+            'message': 'Webhook notifications enabled',
+            'enabled': True
+        }
+
+
+@webhooks_ns.route('/disable')
+class WebhookDisableResource(Resource):
     """Disable webhook notifications"""
-    if not webhook_service or not webhook_service.webhook_config:
-        return jsonify({
-            'error': 'Webhook not configured'
-        }), 400
 
-    webhook_service.webhook_config.enabled = False
-    logging.info("Webhook notifications disabled")
+    @webhooks_ns.doc(security='bearer')
+    @webhooks_ns.marshal_with(message_response)
+    @webhooks_ns.response(400, 'Webhook not configured', error_response)
+    @require_token
+    def post(self):
+        """Disable webhook notifications"""
+        if not webhook_service or not webhook_service.webhook_config:
+            webhooks_ns.abort(400, 'Webhook not configured')
 
-    return jsonify({
-        'message': 'Webhook notifications disabled',
-        'enabled': False
-    })
+        webhook_service.webhook_config.enabled = False
+        logging.info("Webhook notifications disabled")
+
+        return {
+            'message': 'Webhook notifications disabled',
+            'enabled': False
+        }
 
 if __name__ == '__main__':
     # Start the background thread to update sensor data

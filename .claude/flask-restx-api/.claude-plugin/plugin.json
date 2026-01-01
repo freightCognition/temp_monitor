@@ -1,0 +1,22 @@
+{
+  "name": "flask-restx-api",
+  "version": "1.0.0",
+  "description": "Expert guidance for building Flask-RESTX APIs with webhooks, OpenAPI documentation, and security best practices",
+  "author": {
+    "name": "Claude Code Community",
+    "email": "community@anthropic.com"
+  },
+  "keywords": [
+    "flask",
+    "flask-restx",
+    "webhooks",
+    "openapi",
+    "swagger",
+    "rest-api",
+    "hmac",
+    "signature-verification",
+    "api-documentation"
+  ],
+  "license": "MIT",
+  "repository": "https://github.com/yourusername/flask-restx-api-plugin"
+}
