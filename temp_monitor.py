@@ -492,7 +492,7 @@ class WebhookConfigResource(Resource):
                     webhook_service = WebhookService()
 
                 config = WebhookConfig(
-                    url=webhook_data.get('url', webhook_service.webhook_config.url if webhook_service.webhook_config else ''),
+                    url=webhook_data.get('url', ''),
                     enabled=webhook_data.get('enabled', True),
                     retry_count=webhook_data.get('retry_count', 3),
                     retry_delay=webhook_data.get('retry_delay', 5),
