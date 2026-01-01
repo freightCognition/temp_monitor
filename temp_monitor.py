@@ -7,6 +7,7 @@ import threading
 import statistics
 import os
 import functools
+import signal
 from dotenv import load_dotenv
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 from api_models import (
@@ -14,6 +15,11 @@ from api_models import (
     error_response, success_response, message_response, test_response,
     validate_thresholds, validate_webhook_config
 )
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # Load environment variables from .env file
 load_dotenv()
@@ -75,6 +81,12 @@ current_temp = 0
 current_humidity = 0
 last_updated = "Never"
 sampling_interval = 60  # seconds between temperature updates
+
+# Metrics tracking for production deployment
+app_start_time = time.time()
+request_counter = 0
+webhook_alert_counter = 0
+sensor_thread = None  # Will be initialized when started
 
 # Periodic status update configuration
 status_update_enabled = os.getenv('STATUS_UPDATE_ENABLED', 'false').lower() == 'true'
@@ -247,6 +259,7 @@ def update_sensor_data():
                         current_temp, current_humidity, last_updated
                     )
                     if alerts_sent:
+                        increment_alert_counter()
                         logging.info(f"Webhook alerts sent: {list(alerts_sent.keys())}")
                 except Exception as webhook_error:
                     logging.error(f"Error sending webhook alert: {webhook_error}")
@@ -360,7 +373,7 @@ def index():
                 
                 <div class="info">
                     Last updated: {{ last_updated }}<br>
-                    Monitoring device: Raspberry Pi Zero 2 W with Sense HAT<br>                                   
+                    Monitoring device: Raspberry Pi 4with Sense HAT<br>                                   
                 </div>
             </div>
         </body>
@@ -630,14 +643,125 @@ class WebhookDisableResource(Resource):
             'enabled': False
         }
 
-if __name__ == '__main__':
-    # Start the background thread to update sensor data
-    logging.info("Starting temperature monitor service")
+
+# Production Deployment Endpoints
+# ============================================================================
+
+@app.route('/health')
+def health():
+    """Health check endpoint for monitoring and load balancers"""
+    try:
+        sensor_alive = sensor_thread is not None and sensor_thread.is_alive()
+        return jsonify({
+            'status': 'healthy',
+            'uptime_seconds': time.time() - app_start_time,
+            'sensor_thread_alive': sensor_alive,
+            'timestamp': time.time()
+        }), 200
+    except Exception as e:
+        logging.error(f"Health check error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/metrics')
+def metrics():
+    """System and application metrics for Pi 4 monitoring"""
+    try:
+        metrics_data = {
+            'application': {
+                'total_requests': request_counter,
+                'webhook_alerts_sent': webhook_alert_counter,
+                'uptime_seconds': time.time() - app_start_time,
+                'last_sensor_update': last_updated,
+                'current_temp_c': current_temp,
+                'current_humidity_percent': current_humidity,
+                'sensor_thread_alive': sensor_thread is not None and sensor_thread.is_alive()
+            },
+            'hardware': {
+                'cpu_temp_c': get_cpu_temperature()
+            }
+        }
+
+        # Add system metrics if psutil is available
+        if psutil:
+            try:
+                process = psutil.Process()
+                metrics_data['system'] = {
+                    'cpu_percent': psutil.cpu_percent(interval=0.1),
+                    'memory_mb': process.memory_info().rss / 1024 / 1024,
+                    'memory_percent': process.memory_percent(),
+                    'threads': process.num_threads(),
+                    'file_descriptors': process.num_fds() if hasattr(process, 'num_fds') else 'N/A'
+                }
+            except Exception as psutil_error:
+                logging.warning(f"Error collecting system metrics: {psutil_error}")
+                metrics_data['system'] = {'error': str(psutil_error)}
+        else:
+            metrics_data['system'] = {'error': 'psutil not available'}
+
+        return jsonify(metrics_data), 200
+    except Exception as e:
+        logging.error(f"Metrics endpoint error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def start_sensor_thread():
+    """
+    Start the background sensor thread.
+
+    Returns:
+        threading.Thread: The started sensor thread
+
+    Raises:
+        RuntimeError: If sensor thread fails to start
+    """
+    global sensor_thread
+
+    if sensor_thread is not None and sensor_thread.is_alive():
+        logging.warning("Sensor thread is already running, skipping restart")
+        return sensor_thread
+
+    logging.info("Starting temperature monitor sensor thread")
     sensor_thread = threading.Thread(target=update_sensor_data, daemon=True)
     sensor_thread.start()
-    
+
     # Give the thread a moment to get initial readings
     time.sleep(2)
-    
-    # Start the Flask web server
-    app.run(host='0.0.0.0', port=8080)
+
+    if not sensor_thread.is_alive():
+        raise RuntimeError("Sensor thread failed to start")
+
+    logging.info("Sensor thread started successfully")
+    return sensor_thread
+
+
+def increment_request_counter():
+    """Middleware-like function to track requests"""
+    global request_counter
+    request_counter += 1
+
+
+def increment_alert_counter():
+    """Increment webhook alert counter"""
+    global webhook_alert_counter
+    webhook_alert_counter += 1
+
+
+# Add request counter tracking
+@app.before_request
+def before_request():
+    """Track incoming requests for metrics"""
+    increment_request_counter()
+
+
+if __name__ == '__main__':
+    try:
+        # Start the background sensor thread
+        start_sensor_thread()
+
+        # Start the Flask web server in development mode
+        logging.info("Starting Flask development server on 0.0.0.0:8080")
+        app.run(host='0.0.0.0', port=8080)
+    except Exception as e:
+        logging.error(f"Failed to start service: {e}")
+        raise

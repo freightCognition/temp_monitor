@@ -78,7 +78,7 @@ type: implementation_strategy
 
 ## Other Notes
 
-- The temp_monitor project runs on Raspberry Pi Zero 2 W with Sense HAT
+- The temp_monitor project runs on Raspberry Pi 4 with Sense HAT
 - Main app runs on port 8080
 - Bearer token authentication is required for all API endpoints
 - Webhook config is stored in `.env` file (not committed)

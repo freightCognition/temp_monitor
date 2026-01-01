@@ -1,7 +1,7 @@
 # Server Room Temp Monitor
 
 
-A lightweight environmental monitoring system for server rooms or any space where temperature and humidity tracking is critical. Built on a Raspberry Pi Zero 2 W with a Sense HAT.
+A lightweight environmental monitoring system for server rooms or any space where temperature and humidity tracking is critical. Built on a Raspberry Pi 4 with a Sense HAT.
 
 ![image](https://github.com/user-attachments/assets/c96b3e96-c6e6-415d-afc3-7bb13eb406ee)
 
@@ -17,7 +17,7 @@ A lightweight environmental monitoring system for server rooms or any space wher
 
 ## Hardware Requirements
 
-- Raspberry Pi (Zero 2 W or other model)
+- Raspberry Pi 4
 - Sense HAT add-on board
 - Power supply
 - (Optional) Case for the Raspberry Pi
@@ -217,6 +217,75 @@ docker run -d \
 - **Persistent Data:** Logs and the `.env` file are stored in mounted volumes, so they persist across container restarts
 - **Auto-restart:** The docker-compose configuration includes `restart: unless-stopped` to automatically restart the container if it crashes or after system reboot
 
+## Production Deployment
+
+For production deployments on Raspberry Pi 4, the application is optimized with:
+
+- **Waitress WSGI Server**: Production-grade Python web server with single-process, single-thread configuration for resource efficiency
+- **Health Check Endpoint**: `/health` endpoint for monitoring and load balancer integration
+- **Metrics Endpoint**: `/metrics` for system and application metrics (CPU, memory, uptime, request counts)
+- **Memory Monitoring**: Automatic detection and alerting for memory leaks
+- **Systemd Integration**: Pre-configured systemd service with memory limits and restart policies
+- **Docker Optimizations**: Memory limits, health checks, and resource constraints
+
+### Quick Start - Production Deployment
+
+**Option 1: Docker Compose (Recommended)**
+```bash
+docker-compose up -d
+```
+
+**Option 2: Systemd Service**
+```bash
+sudo cp deployment/systemd/temp-monitor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable temp-monitor.service
+sudo systemctl start temp-monitor.service
+```
+
+**Option 3: Direct Startup Script**
+```bash
+./start_production.sh
+```
+
+### Monitoring Production Deployment
+
+Check service health:
+```bash
+curl http://localhost:8080/health
+```
+
+View application and system metrics:
+```bash
+curl http://localhost:8080/metrics | python -m json.tool
+```
+
+Check service status (systemd):
+```bash
+sudo systemctl status temp-monitor.service
+sudo journalctl -u temp-monitor.service -f
+```
+
+Check container status (Docker):
+```bash
+docker-compose ps
+docker-compose logs -f temp-monitor
+```
+
+### Production Configuration
+
+Memory limits (configurable):
+- Process limit: 512MB
+- Alert threshold: 400MB
+- Auto-restart at limit
+
+Server settings:
+- Single worker / single thread
+- 50 concurrent connection limit
+- 120-second request timeout
+
+For detailed production deployment guide, see [docs/PI4_DEPLOYMENT.md](docs/PI4_DEPLOYMENT.md)
+
 ## Usage
 
 ### Web Dashboard
@@ -342,9 +411,44 @@ curl -H "Authorization: Bearer YOUR_TOKEN_HERE" http://your-server:8080/api/temp
 
 ### Available Endpoints
 
+**Authentication Required (Bearer Token):**
 - `/api/temp` - Get current temperature and humidity data
 - `/api/raw` - Get raw temperature data (including CPU temperature)
 - `/api/verify-token` - Verify if your token is valid
+- `/api/webhook/*` - Webhook management endpoints
+
+**No Authentication Required:**
+- `/health` - Health check endpoint for monitoring and load balancers
+  ```json
+  {
+    "status": "healthy",
+    "uptime_seconds": 12345,
+    "sensor_thread_alive": true,
+    "timestamp": 1234567890.123
+  }
+  ```
+- `/metrics` - System and application metrics (CPU, memory, request counts, uptime)
+  ```json
+  {
+    "application": {
+      "total_requests": 1234,
+      "webhook_alerts_sent": 42,
+      "uptime_seconds": 12345,
+      "current_temp_c": 23.5,
+      "current_humidity_percent": 45.2
+    },
+    "system": {
+      "cpu_percent": 12.5,
+      "memory_mb": 120.5,
+      "memory_percent": 23.5,
+      "threads": 5
+    },
+    "hardware": {
+      "cpu_temp_c": 54.2
+    }
+  }
+  ```
+- `/docs` - Swagger API documentation
 
 ## Changing the Bearer Token
 

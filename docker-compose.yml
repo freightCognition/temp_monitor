@@ -14,3 +14,13 @@ services:
     restart: unless-stopped
     environment:
       - LOG_FILE=/app/logs/temp_monitor.log
+    # Resource limits for Pi 4 (single-process deployment)
+    mem_limit: 512m
+    mem_reservation: 256m
+    # Health check for monitoring
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
