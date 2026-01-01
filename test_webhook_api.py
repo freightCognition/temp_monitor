@@ -154,7 +154,8 @@ class TestWebhookAPIEndpoints(unittest.TestCase):
         data = json.loads(response.data)
 
         self.assertIn('webhook', data)
-        self.assertEqual(data['webhook']['url'], 'https://hooks.slack.com/test')
+        # URL should be masked (scheme + host only)
+        self.assertEqual(data['webhook']['url'], 'https://hooks.slack.com')
 
         self.assertIn('thresholds', data)
         self.assertEqual(data['thresholds']['temp_min_c'], 15.0)
@@ -277,6 +278,58 @@ class TestWebhookAPIEndpoints(unittest.TestCase):
 
         # Should fail with 403 Forbidden
         self.assertEqual(response.status_code, 403)
+
+    def test_webhook_url_masking(self):
+        """Test that webhook URLs are masked in API responses for security
+
+        Verifies that full webhook URLs (which may contain sensitive tokens)
+        are not exposed in GET/PUT responses. Only scheme + host should be returned.
+        """
+        import temp_monitor
+
+        # Test with Slack webhook URL (contains sensitive tokens in path)
+        slack_url = 'https://hooks.slack.com/services/T12345/B67890/ABCDEFGHIJKLMNOP'
+        config = WebhookConfig(url=slack_url, enabled=True)
+        temp_monitor.webhook_service = WebhookService(webhook_config=config)
+
+        # Test GET endpoint returns masked URL
+        response = self.client.get(
+            '/api/webhook/config',
+            headers=self.auth_header
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+
+        # Verify that full URL is NOT returned
+        self.assertNotEqual(data['webhook']['url'], slack_url)
+        # Verify that masked URL shows only scheme + host
+        self.assertEqual(data['webhook']['url'], 'https://hooks.slack.com')
+        # Verify tokens are NOT exposed
+        self.assertNotIn('T12345', data['webhook']['url'])
+        self.assertNotIn('B67890', data['webhook']['url'])
+        self.assertNotIn('ABCDEFGHIJKLMNOP', data['webhook']['url'])
+
+        # Test PUT endpoint also returns masked URL
+        payload = {
+            'webhook': {
+                'enabled': False  # Just disable, don't change URL
+            }
+        }
+
+        response = self.client.put(
+            '/api/webhook/config',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.auth_header
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+
+        # Verify masked URL in PUT response as well
+        self.assertEqual(data['config']['webhook']['url'], 'https://hooks.slack.com')
+        self.assertNotIn('T12345', data['config']['webhook']['url'])
 
 
 def main():

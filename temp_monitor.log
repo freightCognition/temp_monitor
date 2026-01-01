@@ -2,3 +2,12 @@
 2025-11-28 05:02:16,375 - INFO - Saved bearer token to .env file
 2025-11-28 05:02:16,378 - INFO - Starting temperature monitor service
 2025-11-28 05:02:16,379 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
+2026-01-01 05:17:07,566 - INFO - Webhook service not configured (no SLACK_WEBHOOK_URL)
+2026-01-01 05:17:07,567 - ERROR - BEARER_TOKEN not set in environment. API endpoints will not work.
+2026-01-01 05:17:07,574 - WARNING - API access attempt without valid Authorization header from 127.0.0.1
+2026-01-01 05:17:07,575 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-01 05:17:07,576 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-01 05:17:07,576 - INFO - Alert thresholds updated: {'temp_min_c': 10.0, 'temp_max_c': 30.0, 'humidity_min': 20.0, 'humidity_max': 80.0}
+2026-01-01 05:17:07,577 - WARNING - API access attempt with invalid token from 127.0.0.1
+2026-01-01 05:17:07,577 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-01 05:17:07,578 - INFO - Webhook configuration updated: https://hooks.slack.com

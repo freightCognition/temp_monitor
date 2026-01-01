@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import threading
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -44,11 +45,33 @@ class WebhookService:
         self.alert_cooldown = 300  # 5 minutes between same alert type
         self._lock = threading.Lock()
 
+    def _mask_url(self, url: str) -> str:
+        """
+        Mask webhook URL by returning only scheme and host for security.
+
+        This prevents sensitive path components and tokens from being exposed in logs.
+
+        Args:
+            url: Full webhook URL
+
+        Returns:
+            Masked URL in format 'scheme://host' or '<invalid-url>' if malformed
+        """
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}"
+            else:
+                return "<invalid-url>"
+        except Exception as e:
+            logging.warning(f"Error masking webhook URL: {e}")
+            return "<invalid-url>"
+
     def set_webhook_config(self, config: WebhookConfig):
         """Update webhook configuration"""
         with self._lock:
             self.webhook_config = config
-            logging.info(f"Webhook configuration updated: {config.url}")
+            logging.info(f"Webhook configuration updated: {self._mask_url(config.url)}")
 
     def set_alert_thresholds(self, thresholds: AlertThresholds):
         """Update alert thresholds"""
@@ -82,7 +105,7 @@ class WebhookService:
                 )
 
                 if response.status_code == 200:
-                    logging.info(f"Webhook sent successfully to {url}")
+                    logging.info(f"Webhook sent successfully to {self._mask_url(url)}")
                     return True
                 else:
                     logging.warning(

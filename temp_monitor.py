@@ -8,6 +8,7 @@ import statistics
 import os
 import functools
 import signal
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 from api_models import (
@@ -145,6 +146,33 @@ if not BEARER_TOKEN:
     print("Then add it to your .env file: BEARER_TOKEN=<your_token>")
 else:
     logging.info("Bearer token loaded from environment")
+
+def mask_webhook_url(url):
+    """
+    Mask webhook URL by returning only scheme and host for security.
+
+    This prevents sensitive path components and tokens from being exposed
+    in API responses and logs, while still showing which service is configured.
+
+    Args:
+        url: Full webhook URL or None
+
+    Returns:
+        Masked URL in format 'scheme://host' or None if input is None/empty
+    """
+    if not url:
+        return None
+
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+        else:
+            # Malformed URL - return generic placeholder
+            return "<invalid-url>"
+    except Exception as e:
+        logging.warning(f"Error masking webhook URL: {e}")
+        return "<invalid-url>"
 
 def require_token(f):
     """Decorator to require bearer token authentication for API endpoints"""
@@ -457,7 +485,7 @@ class WebhookConfigResource(Resource):
 
         return {
             'webhook': {
-                'url': config.url,
+                'url': mask_webhook_url(config.url),
                 'enabled': config.enabled,
                 'retry_count': config.retry_count,
                 'retry_delay': config.retry_delay,
@@ -544,7 +572,7 @@ class WebhookConfigResource(Resource):
                 'message': 'Webhook configuration updated successfully',
                 'config': {
                     'webhook': {
-                        'url': webhook_service.webhook_config.url if webhook_service and webhook_service.webhook_config else None,
+                        'url': mask_webhook_url(webhook_service.webhook_config.url) if webhook_service and webhook_service.webhook_config else None,
                         'enabled': webhook_service.webhook_config.enabled if webhook_service and webhook_service.webhook_config else False,
                         'retry_count': webhook_service.webhook_config.retry_count if webhook_service and webhook_service.webhook_config else 3,
                         'retry_delay': webhook_service.webhook_config.retry_delay if webhook_service and webhook_service.webhook_config else 5,
@@ -560,8 +588,8 @@ class WebhookConfigResource(Resource):
             }
 
         except Exception as e:
-            logging.error(f"Error updating webhook config: {e}")
-            return {'error': 'Failed to update webhook configuration', 'details': str(e)}, 500
+            logging.exception("Error updating webhook config")
+            return {'error': 'Failed to update webhook configuration'}, 500
 
 
 @webhooks_ns.route('/test')
@@ -596,8 +624,8 @@ class WebhookTestResource(Resource):
                 webhooks_ns.abort(500, 'Failed to send test webhook')
 
         except Exception as e:
-            logging.error(f"Error sending test webhook: {e}")
-            webhooks_ns.abort(500, f'Failed to send test webhook: {e}')
+            logging.exception("Error sending test webhook")
+            webhooks_ns.abort(500, 'Failed to send test webhook')
 
 
 @webhooks_ns.route('/enable')

@@ -78,7 +78,7 @@ webhook_config_update = webhooks_ns.model('WebhookConfigUpdate', {
 
 # Response models - separate from input models for flexibility
 webhook_config_output = webhooks_ns.model('WebhookConfigOutput', {
-    'url': fields.String(description='Webhook URL'),
+    'url': fields.String(description='Webhook URL (masked - scheme and host only for security)'),
     'enabled': fields.Boolean(description='Webhook enabled status'),
     'retry_count': fields.Integer(description='Number of retry attempts'),
     'retry_delay': fields.Integer(description='Retry delay in seconds'),
