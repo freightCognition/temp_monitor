@@ -219,10 +219,10 @@ class SupportedEvents(Resource):
 @api.errorhandler(Exception)
 def handle_exception(error):
     """Global error handler"""
-    logger.error(f"Unhandled exception: {error}")
+    logger.exception("Unhandled exception")  # Logs full traceback
     return {
         'error': 'internal_error',
-        'message': str(error)
+        'message': 'An unexpected error occurred'
     }, 500
 
 
