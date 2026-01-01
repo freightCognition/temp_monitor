@@ -766,13 +766,15 @@ def start_sensor_thread():
 def increment_request_counter():
     """Middleware-like function to track requests"""
     global request_counter
-    request_counter += 1
+    with threading.Lock():
+        request_counter += 1
 
 
 def increment_alert_counter():
     """Increment webhook alert counter"""
     global webhook_alert_counter
-    webhook_alert_counter += 1
+    with threading.Lock():
+        webhook_alert_counter += 1
 
 
 # Add request counter tracking
