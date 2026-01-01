@@ -136,6 +136,14 @@ if status_update_enabled and webhook_service:
 elif status_update_enabled and not webhook_service:
     logging.warning("STATUS_UPDATE_ENABLED is true but webhook service not configured")
 
+def generate_error_id():
+    """Generate a correlation ID for error tracking in logs and responses"""
+    timestamp = int(time.time() * 1000)
+    import random
+    suffix = format(random.randint(0, 65535), '04x')
+    return f"{timestamp}_{suffix}"
+
+
 # Get bearer token from environment (required)
 BEARER_TOKEN = os.getenv('BEARER_TOKEN')
 if not BEARER_TOKEN:
@@ -560,8 +568,9 @@ class WebhookConfigResource(Resource):
             }
 
         except Exception as e:
-            logging.error(f"Error updating webhook config: {e}")
-            return {'error': 'Failed to update webhook configuration', 'details': str(e)}, 500
+            error_id = generate_error_id()
+            logging.exception(f"Error updating webhook config [error_id: {error_id}]")
+            return {'error': 'Failed to update webhook configuration', 'error_id': error_id}, 500
 
 
 @webhooks_ns.route('/test')
@@ -596,8 +605,9 @@ class WebhookTestResource(Resource):
                 webhooks_ns.abort(500, 'Failed to send test webhook')
 
         except Exception as e:
-            logging.error(f"Error sending test webhook: {e}")
-            webhooks_ns.abort(500, f'Failed to send test webhook: {e}')
+            error_id = generate_error_id()
+            logging.exception(f"Error sending test webhook [error_id: {error_id}]")
+            webhooks_ns.abort(500, 'Failed to send test webhook')
 
 
 @webhooks_ns.route('/enable')
@@ -659,8 +669,9 @@ def health():
             'timestamp': time.time()
         }), 200
     except Exception as e:
-        logging.error(f"Health check error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        error_id = generate_error_id()
+        logging.exception(f"Health check error [error_id: {error_id}]")
+        return jsonify({'status': 'error', 'error_id': error_id}), 500
 
 
 @app.route('/metrics')
@@ -694,15 +705,16 @@ def metrics():
                     'file_descriptors': process.num_fds() if hasattr(process, 'num_fds') else 'N/A'
                 }
             except Exception as psutil_error:
-                logging.warning(f"Error collecting system metrics: {psutil_error}")
-                metrics_data['system'] = {'error': str(psutil_error)}
+                logging.exception("Error collecting system metrics")
+                metrics_data['system'] = {'error': 'Unable to collect system metrics'}
         else:
             metrics_data['system'] = {'error': 'psutil not available'}
 
         return jsonify(metrics_data), 200
     except Exception as e:
-        logging.error(f"Metrics endpoint error: {e}")
-        return jsonify({'error': str(e)}), 500
+        error_id = generate_error_id()
+        logging.exception(f"Metrics endpoint error [error_id: {error_id}]")
+        return jsonify({'error': 'Unable to retrieve metrics', 'error_id': error_id}), 500
 
 
 def start_sensor_thread():
