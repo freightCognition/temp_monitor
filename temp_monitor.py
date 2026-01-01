@@ -139,7 +139,7 @@ elif status_update_enabled and not webhook_service:
 def generate_error_id():
     """Generate a correlation ID for error tracking in logs and responses"""
     timestamp = int(time.time() * 1000)
-    import random
+import random
     suffix = format(random.randint(0, 65535), '04x')
     return f"{timestamp}_{suffix}"
 
