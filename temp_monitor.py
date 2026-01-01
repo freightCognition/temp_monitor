@@ -687,8 +687,8 @@ def health():
             'timestamp': time.time()
         }), 200
     except Exception as e:
-        logging.error(f"Health check error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        logging.exception("Health check error")
+        return jsonify({'status': 'error', 'message': 'Internal server error'}), 500
 
 
 @app.route('/metrics')
@@ -723,14 +723,14 @@ def metrics():
                 }
             except Exception as psutil_error:
                 logging.warning(f"Error collecting system metrics: {psutil_error}")
-                metrics_data['system'] = {'error': str(psutil_error)}
+                metrics_data['system'] = {'error': 'Failed to collect system metrics'}
         else:
             metrics_data['system'] = {'error': 'psutil not available'}
 
         return jsonify(metrics_data), 200
     except Exception as e:
-        logging.error(f"Metrics endpoint error: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.exception("Metrics endpoint error")
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 def start_sensor_thread():
