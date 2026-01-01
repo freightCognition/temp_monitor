@@ -476,11 +476,16 @@ class WebhookConfigResource(Resource):
             if not is_valid:
                 webhooks_ns.abort(400, error_msg)
 
-        # Validate URL is provided when creating new webhook service
+        # Validate URL is provided when no existing URL to fall back to
         if 'webhook' in data and data['webhook']:
             webhook_data = data['webhook']
-            if not webhook_service and 'url' not in webhook_data:
-                webhooks_ns.abort(400, 'URL required to create webhook config')
+            has_existing_url = (
+                webhook_service and
+                webhook_service.webhook_config and
+                webhook_service.webhook_config.url
+            )
+            if not has_existing_url and 'url' not in webhook_data:
+                webhooks_ns.abort(400, 'URL required when no existing webhook config')
 
         try:
             # Update webhook config if provided
@@ -491,12 +496,13 @@ class WebhookConfigResource(Resource):
                 if not webhook_service:
                     webhook_service = WebhookService()
 
+                existing_config = webhook_service.webhook_config if webhook_service else None
                 config = WebhookConfig(
-                    url=webhook_data.get('url', ''),
-                    enabled=webhook_data.get('enabled', True),
-                    retry_count=webhook_data.get('retry_count', 3),
-                    retry_delay=webhook_data.get('retry_delay', 5),
-                    timeout=webhook_data.get('timeout', 10)
+                    url=webhook_data.get('url', existing_config.url if existing_config else ''),
+                    enabled=webhook_data.get('enabled', existing_config.enabled if existing_config else True),
+                    retry_count=webhook_data.get('retry_count', existing_config.retry_count if existing_config else 3),
+                    retry_delay=webhook_data.get('retry_delay', existing_config.retry_delay if existing_config else 5),
+                    timeout=webhook_data.get('timeout', existing_config.timeout if existing_config else 10)
                 )
                 webhook_service.set_webhook_config(config)
 
