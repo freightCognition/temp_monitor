@@ -404,13 +404,17 @@ class GitHubWebhook(Resource):
     @rate_limit_by_ip()
     def post(self):
         """Receive GitHub webhook"""
+        if not Config.GITHUB_WEBHOOK_SECRET:
+            security_logger.warning(f"GitHub webhook rejected: secret not configured")
+            abort(503, 'GitHub webhook secret not configured')
+
         signature = request.headers.get('X-Hub-Signature-256')
         if not signature:
             abort(401, 'Missing GitHub signature')
 
         payload = request.get_data()
         expected = 'sha256=' + hmac.new(
-            Config.GITHUB_WEBHOOK_SECRET.encode() if Config.GITHUB_WEBHOOK_SECRET else b'',
+            Config.GITHUB_WEBHOOK_SECRET.encode(),
             payload,
             hashlib.sha256
         ).hexdigest()
