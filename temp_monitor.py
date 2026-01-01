@@ -459,7 +459,7 @@ class WebhookConfigResource(Resource):
         }
 
     @webhooks_ns.doc(security='bearer')
-    @webhooks_ns.expect(webhook_config_update, validate=True)
+    @webhooks_ns.expect(webhook_config_update)
     @webhooks_ns.marshal_with(success_response)
     @webhooks_ns.response(400, 'Validation Error', error_response)
     @webhooks_ns.response(500, 'Server Error', error_response)
