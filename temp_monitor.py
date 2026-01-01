@@ -401,7 +401,7 @@ def index():
                 
                 <div class="info">
                     Last updated: {{ last_updated }}<br>
-                    Monitoring device: Raspberry Pi 4with Sense HAT<br>                                   
+                    Monitoring device: Raspberry Pi 4 with Sense HAT<br>
                 </div>
             </div>
         </body>
