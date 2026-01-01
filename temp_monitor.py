@@ -62,8 +62,9 @@ api = Api(
             'name': 'Authorization',
             'description': 'Bearer token authentication. Format: "Bearer <token>"'
         }
-    },
-    security='bearer'
+    }
+    # Note: security='bearer' removed to allow public Swagger UI access at /docs
+    # Individual endpoints are protected via @webhooks_ns.doc(security='bearer') decorators
 )
 
 # Register the webhooks namespace

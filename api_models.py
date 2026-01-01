@@ -11,10 +11,11 @@ from flask_restx import Namespace, fields
 webhooks_ns = Namespace('webhooks', description='Webhook configuration and management')
 
 # Webhook configuration model with validation
+# Note: url is not required for partial updates when webhook service already exists
 webhook_config_input = webhooks_ns.model('WebhookConfigInput', {
     'url': fields.String(
-        required=True,
-        description='Slack webhook URL',
+        required=False,
+        description='Slack webhook URL (required when creating new webhook config)',
         example='https://hooks.slack.com/services/...'
     ),
     'enabled': fields.Boolean(

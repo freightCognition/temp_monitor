@@ -21,11 +21,11 @@ Activate this skill when:
 ## Core Concepts
 
 ### Flask-RESTX Overview
-
+œ
 Flask-RESTX is a community-driven fork of Flask-RESTPlus that provides:
 - Automatic Swagger UI documentation generation
 - Request validation through models and parsers
-- Response marshalling with field definitions
+- Response marshalling with field definitionsœ
 - Namespace-based API organization
 - Decorator-based endpoint documentation
 
