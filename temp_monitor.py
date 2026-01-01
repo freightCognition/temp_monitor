@@ -551,7 +551,7 @@ class WebhookTestResource(Resource):
     def post(self):
         """Send a test webhook message"""
         if not webhook_service or not webhook_service.webhook_config:
-            return {'error': 'Webhook not configured'}, 400
+            webhooks_ns.abort(400, 'Webhook not configured')
 
         try:
             cpu_temp = get_cpu_temperature()
@@ -568,11 +568,11 @@ class WebhookTestResource(Resource):
                     'timestamp': last_updated
                 }
             else:
-                return {'error': 'Failed to send test webhook'}, 500
+                webhooks_ns.abort(500, 'Failed to send test webhook')
 
         except Exception as e:
             logging.error(f"Error sending test webhook: {e}")
-            return {'error': 'Failed to send test webhook', 'details': str(e)}, 500
+            webhooks_ns.abort(500, f'Failed to send test webhook: {e}')
 
 
 @webhooks_ns.route('/enable')
@@ -586,7 +586,7 @@ class WebhookEnableResource(Resource):
     def post(self):
         """Enable webhook notifications"""
         if not webhook_service or not webhook_service.webhook_config:
-            return {'error': 'Webhook not configured'}, 400
+            webhooks_ns.abort(400, 'Webhook not configured')
 
         webhook_service.webhook_config.enabled = True
         logging.info("Webhook notifications enabled")
@@ -608,7 +608,7 @@ class WebhookDisableResource(Resource):
     def post(self):
         """Disable webhook notifications"""
         if not webhook_service or not webhook_service.webhook_config:
-            return {'error': 'Webhook not configured'}, 400
+            webhooks_ns.abort(400, 'Webhook not configured')
 
         webhook_service.webhook_config.enabled = False
         logging.info("Webhook notifications disabled")
