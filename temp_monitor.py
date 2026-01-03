@@ -541,7 +541,7 @@ class WebhookConfigResource(Resource):
                 webhook_service.webhook_config and
                 webhook_service.webhook_config.url
             )
-            if not has_existing_url and 'url' not in webhook_data:
+            if not has_existing_url and not webhook_data.get('url'):
                 webhooks_ns.abort(400, 'URL required when no existing webhook config')
 
         try:

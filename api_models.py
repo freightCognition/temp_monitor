@@ -6,6 +6,7 @@ Provides automatic OpenAPI/Swagger documentation generation.
 """
 
 from flask_restx import Namespace, fields
+from urllib.parse import urlparse
 
 # Create namespace for webhook endpoints
 webhooks_ns = Namespace('webhooks', description='Webhook configuration and management')
@@ -130,6 +131,17 @@ def validate_webhook_config(webhook: dict) -> tuple:
     Returns:
         Tuple of (is_valid: bool, error_message: str)
     """
+    # Validate URL if provided
+    if 'url' in webhook:
+        url = webhook['url']
+        if url is not None:  # Allow None/missing for partial updates with existing config
+            if not isinstance(url, str) or not url.strip():
+                return False, 'url must be a non-empty string'
+            # Basic URL format validation
+            parsed = urlparse(url)
+            if not parsed.scheme or not parsed.netloc:
+                return False, 'url must be a valid URL with scheme and host'
+
     if 'retry_count' in webhook and webhook['retry_count'] is not None:
         if not (1 <= webhook['retry_count'] <= 10):
             return False, 'retry_count must be between 1 and 10'

@@ -29,3 +29,14 @@
 2026-01-01 05:42:03,716 - WARNING - API access attempt with invalid token from 127.0.0.1
 2026-01-01 05:42:03,716 - INFO - Webhook configuration updated: https://hooks.slack.com
 2026-01-01 05:42:03,717 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-03 12:43:20,440 - INFO - Webhook service initialized
+2026-01-03 12:43:20,440 - INFO - Periodic status updates enabled (will send on startup)
+2026-01-03 12:43:20,440 - INFO - Bearer token loaded from environment
+2026-01-03 12:43:20,450 - WARNING - API access attempt without valid Authorization header from 127.0.0.1
+2026-01-03 12:43:20,451 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-03 12:43:20,452 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-03 12:43:20,452 - INFO - Alert thresholds updated: {'temp_min_c': 10.0, 'temp_max_c': 30.0, 'humidity_min': 20.0, 'humidity_max': 80.0}
+2026-01-03 12:43:20,453 - WARNING - API access attempt with invalid token from 127.0.0.1
+2026-01-03 12:43:20,454 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-03 12:43:20,454 - INFO - Webhook configuration updated: https://hooks.slack.com
+2026-01-03 12:43:20,454 - INFO - Webhook configuration updated: https://hooks.slack.com

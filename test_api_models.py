@@ -89,6 +89,69 @@ class TestValidateWebhookConfig(unittest.TestCase):
         self.assertFalse(is_valid)
         self.assertIn('timeout', error)
 
+    def test_valid_url(self):
+        """Valid URL with scheme and host passes validation."""
+        config = {'url': 'https://hooks.slack.com/services/T00/B00/xxx'}
+        is_valid, error = validate_webhook_config(config)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_valid_url_http(self):
+        """HTTP URL is valid (not just HTTPS)."""
+        config = {'url': 'http://example.com/webhook'}
+        is_valid, error = validate_webhook_config(config)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_invalid_url_empty_string(self):
+        """Empty string URL is invalid."""
+        config = {'url': ''}
+        is_valid, error = validate_webhook_config(config)
+        self.assertFalse(is_valid)
+        self.assertIn('url', error)
+
+    def test_invalid_url_whitespace_only(self):
+        """Whitespace-only URL is invalid."""
+        config = {'url': '   '}
+        is_valid, error = validate_webhook_config(config)
+        self.assertFalse(is_valid)
+        self.assertIn('url', error)
+
+    def test_invalid_url_no_scheme(self):
+        """URL without scheme is invalid."""
+        config = {'url': 'hooks.slack.com/services/T00/B00/xxx'}
+        is_valid, error = validate_webhook_config(config)
+        self.assertFalse(is_valid)
+        self.assertIn('scheme', error)
+
+    def test_invalid_url_no_host(self):
+        """URL without host is invalid."""
+        config = {'url': 'https://'}
+        is_valid, error = validate_webhook_config(config)
+        self.assertFalse(is_valid)
+        self.assertIn('scheme', error)
+
+    def test_url_none_is_valid(self):
+        """None URL is valid (allows partial updates with existing config)."""
+        config = {'url': None}
+        is_valid, error = validate_webhook_config(config)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_url_missing_is_valid(self):
+        """Missing URL key is valid (allows partial updates)."""
+        config = {'retry_count': 5}
+        is_valid, error = validate_webhook_config(config)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_invalid_url_not_string(self):
+        """Non-string URL is invalid."""
+        config = {'url': 12345}
+        is_valid, error = validate_webhook_config(config)
+        self.assertFalse(is_valid)
+        self.assertIn('url', error)
+
 
 class TestValidateThresholds(unittest.TestCase):
     """Tests for validate_thresholds function."""

@@ -105,6 +105,116 @@ class TestWebhookAPIEndpoints(unittest.TestCase):
         self.assertIn('message', data)
         self.assertIn('URL required', data['message'])
 
+    def test_create_webhook_config_empty_url(self):
+        """Test that creating webhook config with empty URL returns 400 error"""
+        import temp_monitor
+        temp_monitor.webhook_service = None
+
+        payload = {
+            'webhook': {
+                'url': '',
+                'enabled': True
+            }
+        }
+
+        response = self.client.put(
+            '/api/webhook/config',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.auth_header
+        )
+
+        # Should fail with 400 Bad Request
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('message', data)
+
+    def test_create_webhook_config_null_url(self):
+        """Test that creating webhook config with null URL returns 400 error"""
+        import temp_monitor
+        temp_monitor.webhook_service = None
+
+        payload = {
+            'webhook': {
+                'url': None,
+                'enabled': True
+            }
+        }
+
+        response = self.client.put(
+            '/api/webhook/config',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.auth_header
+        )
+
+        # Should fail with 400 Bad Request (URL required when no existing config)
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('message', data)
+        self.assertIn('URL required', data['message'])
+
+    def test_create_webhook_config_invalid_url_format(self):
+        """Test that creating webhook config with invalid URL format returns 400 error"""
+        import temp_monitor
+        temp_monitor.webhook_service = None
+
+        payload = {
+            'webhook': {
+                'url': 'not-a-valid-url',  # Missing scheme
+                'enabled': True
+            }
+        }
+
+        response = self.client.put(
+            '/api/webhook/config',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.auth_header
+        )
+
+        # Should fail with 400 Bad Request
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('message', data)
+
+    def test_partial_update_without_url_with_existing_config(self):
+        """Test that partial update without URL works when existing config has URL"""
+        import temp_monitor
+
+        # Create existing webhook service with valid URL
+        existing_config = WebhookConfig(
+            url='https://hooks.slack.com/services/EXISTING',
+            enabled=True,
+            retry_count=3
+        )
+        temp_monitor.webhook_service = WebhookService(webhook_config=existing_config)
+
+        # Update only retry_count, don't provide URL
+        payload = {
+            'webhook': {
+                'retry_count': 8
+            }
+        }
+
+        response = self.client.put(
+            '/api/webhook/config',
+            data=json.dumps(payload),
+            content_type='application/json',
+            headers=self.auth_header
+        )
+
+        # Should succeed
+        self.assertEqual(response.status_code, 200)
+
+        # Verify URL was preserved from existing config
+        self.assertEqual(
+            temp_monitor.webhook_service.webhook_config.url,
+            'https://hooks.slack.com/services/EXISTING'
+        )
+        # Verify retry_count was updated
+        self.assertEqual(temp_monitor.webhook_service.webhook_config.retry_count, 8)
+
     def test_update_existing_webhook_config(self):
         """Test updating webhook config when service already exists"""
         # Create an existing webhook service
