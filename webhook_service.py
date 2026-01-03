@@ -119,7 +119,7 @@ class WebhookService:
 
             # Wait before retry (exponential backoff)
             if attempt < self.webhook_config.retry_count - 1:
-                delay = self.webhook_config.retry_delay * (2 ** attempt)
+                delay = min(self.webhook_config.retry_delay * (2 ** attempt), 300)  # Cap at 5 minutes
                 time.sleep(delay)
 
         logging.error(f"Webhook failed after {self.webhook_config.retry_count} attempts")
