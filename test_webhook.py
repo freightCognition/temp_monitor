@@ -1,4 +1,4 @@
-f#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Test script for webhook functionality
 
