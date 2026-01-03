@@ -5,10 +5,10 @@ This module provides the Flask application and sensor thread initialization
 for use with Waitress or other WSGI servers.
 
 Usage:
-    waitress-serve --host=0.0.0.0 --port=8080 --threads=1 --call wsgi:app
+    waitress-serve --host=0.0.0.0 --port=8080 --threads=1 wsgi:app
 
 Or in docker-compose.yml:
-    CMD ["waitress-serve", "--host=0.0.0.0", "--port=8080", "--threads=1", "--call", "wsgi:app"]
+    CMD ["waitress-serve", "--host=0.0.0.0", "--port=8080", "--threads=1", "wsgi:app"]
 """
 
 import logging
