@@ -29,5 +29,3 @@ services:
     depends_on:
       - temp-monitor
     restart: unless-stopped
-    profiles:
-      - cloudflare

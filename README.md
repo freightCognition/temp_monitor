@@ -82,7 +82,7 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 |----------|---------|-------------|
 | `BEARER_TOKEN` | (required) | API authentication token |
 | `LOG_FILE` | `temp_monitor.log` | Log file path |
-| `CLOUDFLARED_TOKEN` | (none) | Cloudflare Tunnel token for docker-compose `cloudflared` service |
+| `CLOUDFLARED_TOKEN` | (required for CI) | Cloudflare Tunnel token for docker-compose `cloudflared` service (optional for local dev) |
 
 ### Webhook Settings
 
@@ -228,10 +228,12 @@ docker compose down
 
 **Note**: Requires privileged mode for I2C/hardware access.
 
-**Cloudflare Tunnel (Optional):** To enable the bundled Cloudflare Tunnel:
+**Cloudflare Tunnel:** The bundled Cloudflare Tunnel service starts automatically:
 1. Add `CLOUDFLARED_TOKEN` to `.env`
-2. Start with the cloudflare profile: `docker compose --profile cloudflare up -d`
+2. Start with: `docker compose up -d`
 3. In Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`
+
+**Note:** `CLOUDFLARED_TOKEN` is **required for CI/production** - the CI workflow (`.github/workflows/ci.yml:79-83`) enforces this and will fail deployment if missing. For **local development**, the token is optional: if not set, the cloudflared service will fail to start but the main temp-monitor service continues working. To run locally without Cloudflare Tunnel, use `docker compose up -d temp-monitor`.
 
 ### Systemd Service
 
