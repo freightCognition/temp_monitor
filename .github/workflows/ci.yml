@@ -76,6 +76,12 @@ jobs:
             exit 1
           fi
 
+          # Validate CLOUDFLARED_TOKEN (required since we deploy with cloudflare profile)
+          if [ -z "${CLOUDFLARED_TOKEN}" ]; then
+            echo "Missing required secret: CLOUDFLARED_TOKEN"
+            exit 1
+          fi
+
           # Create .env file with required configuration
           echo "BEARER_TOKEN=${BEARER_TOKEN}" > .env
 
@@ -110,4 +116,4 @@ jobs:
         run: mkdir -p logs
 
       - name: Deploy with Docker Compose
-        run: docker compose -p temp-monitor up -d --build --remove-orphans
+        run: docker compose -p temp-monitor --profile cloudflare up -d --build --remove-orphans
