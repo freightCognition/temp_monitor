@@ -108,9 +108,9 @@ jobs:
 
           chmod 600 .env
         env:
-          BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
-          CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_TOKEN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          BEARER_TOKEN: "${{ secrets.BEARER_TOKEN }}"
+          CLOUDFLARED_TOKEN: "${{ secrets.CLOUDFLARED_TOKEN }}"
+          SLACK_WEBHOOK_URL: "${{ secrets.SLACK_WEBHOOK_URL }}"
 
       - name: Ensure logs directory
         run: mkdir -p logs
