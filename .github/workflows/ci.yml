@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       deploy_ref:
-        description: "Branch, tag, or SHA to deploy (manual runs only)"
+        description: "Branch, tag, or SHA to deploy"
         required: false
         default: ""
+      environment:
+        description: "Deployment environment (for testing from feature branches)"
+        required: false
+        type: choice
+        options:
+          - production
+          - testing
+        default: "testing"
   push:
     branches: ["main", "master"]
   pull_request:
@@ -71,11 +79,22 @@ jobs:
     runs-on: self-hosted
     needs: tests
     timeout-minutes: 20
+    # Deploy on:
+    # - Manual trigger (workflow_dispatch) from ANY branch
+    # - Release published
+    # - Push to main/master
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'release' ||
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     steps:
+      - name: Display deployment info
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Deploy ref: ${{ github.event.inputs.deploy_ref || github.ref }}"
+          echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
