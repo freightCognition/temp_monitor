@@ -14,3 +14,19 @@ services:
     restart: unless-stopped
     environment:
       - LOG_FILE=/app/logs/temp_monitor.log
+    # Health check for monitoring (checks /health endpoint every 30s)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN}
+    depends_on:
+      - temp-monitor
+    restart: unless-stopped
+    profiles:
+      - cloudflare

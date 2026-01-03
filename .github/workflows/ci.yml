@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.9"]
+    env:
+      BEARER_TOKEN: test_token_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies (exclude Sense HAT)
+        run: |
+          python -m pip install --upgrade pip
+          grep -v '^sense-hat' requirements.txt | grep -v '^#' | grep -v '^$' | xargs pip install
+
+      - name: Run tests
+        run: |
+          python test_webhook_api.py
+          python test_webhook.py
+          python test_periodic_updates.py
+          python test_api_models.py
+
+  deploy:
+    runs-on: self-hosted
+    needs: tests
+    timeout-minutes: 20
+    # SECURITY: Only deploy from trusted sources (requires write access to repo)
+    # - Manual trigger (workflow_dispatch) - requires write access
+    # - Release published - requires write access
+    # - Push to main/master - requires write access
+    # NEVER runs on pull_request events (untrusted forks could execute malicious code)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    environment:
+      name: production
+      url: http://raspberrypi.local:8080
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env from GitHub Secrets
+        run: |
+          # Validate required secrets (BEARER_TOKEN is required for API auth)
+          if [ -z "${BEARER_TOKEN}" ]; then
+            echo "Missing required secret: BEARER_TOKEN"
+            exit 1
+          fi
+
+          # Create .env file with required configuration
+          echo "BEARER_TOKEN=${BEARER_TOKEN}" > .env
+
+          # Add optional Cloudflare Tunnel token if configured
+          if [ -n "${CLOUDFLARED_TOKEN}" ]; then
+            echo "CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN}" >> .env
+          fi
+
+          # Add optional Slack webhook if configured (enables alerts/status updates)
+          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+            echo "SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}" >> .env
+            echo "WEBHOOK_ENABLED=true" >> .env
+          fi
+
+          # Production monitoring defaults (intentionally enabled for production,
+          # differs from local development defaults in .env.example)
+          echo "ALERT_TEMP_MIN_C=15.0" >> .env
+          echo "ALERT_TEMP_MAX_C=27.0" >> .env
+          echo "ALERT_HUMIDITY_MIN=30.0" >> .env
+          echo "ALERT_HUMIDITY_MAX=70.0" >> .env
+          echo "STATUS_UPDATE_ENABLED=true" >> .env
+          echo "STATUS_UPDATE_INTERVAL=3600" >> .env
+          echo "STATUS_UPDATE_ON_STARTUP=true" >> .env
+
+          chmod 600 .env
+        env:
+          BEARER_TOKEN: ${{ secrets.BEARER_TOKEN }}
+          CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Ensure logs directory
+        run: mkdir -p logs
+
+      - name: Deploy with Docker Compose
+        run: docker compose -p temp-monitor up -d --build --remove-orphans

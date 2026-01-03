@@ -1,0 +1,51 @@
+[Unit]
+Description=Temperature Monitor Service for Pi 4
+Documentation=https://github.com/your-repo/temp_monitor
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/temp_monitor
+
+# Environment variables
+Environment="PRODUCTION_MODE=true"
+Environment="LOG_FILE=/var/log/temp-monitor/temp_monitor.log"
+
+# Service startup command using Waitress
+ExecStart=/home/pi/temp_monitor/venv/bin/waitress-serve \
+    --host=0.0.0.0 \
+    --port=8080 \
+    --threads=1 \
+    --channel-timeout=120 \
+    --connection-limit=50 \
+    wsgi:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Resource limits for Pi 4
+MemoryLimit=512M
+MemoryMax=600M
+
+# Output handling
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=temp-monitor
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/temp-monitor /home/pi/temp_monitor
+
+# Capabilities needed for I2C/Sense HAT access
+AmbientCapabilities=CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target
