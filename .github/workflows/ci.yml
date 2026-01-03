@@ -85,7 +85,7 @@ jobs:
           # Create .env file with required configuration
           echo "BEARER_TOKEN=${BEARER_TOKEN}" > .env
 
-          # Add optional Cloudflare Tunnel token if configured
+          # Add required Cloudflare Tunnel token
           if [ -n "${CLOUDFLARED_TOKEN}" ]; then
             echo "CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN}" >> .env
           fi
