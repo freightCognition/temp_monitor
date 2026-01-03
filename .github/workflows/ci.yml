@@ -7,14 +7,6 @@ on:
         description: "Branch, tag, or SHA to deploy"
         required: false
         default: ""
-      environment:
-        description: "Deployment environment (for testing from feature branches)"
-        required: false
-        type: choice
-        options:
-          - production
-          - testing
-        default: "testing"
   push:
     branches: ["main", "master"]
   pull_request:
@@ -85,7 +77,6 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Ref: ${{ github.ref }}"
           echo "Deploy ref: ${{ github.event.inputs.deploy_ref || github.ref }}"
-          echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
 
       - name: Checkout
         uses: actions/checkout@v4
