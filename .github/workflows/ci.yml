@@ -99,8 +99,8 @@ jobs:
           # Production monitoring defaults (intentionally enabled for production,
           # differs from local development defaults in .env.example)
           echo "ALERT_TEMP_MIN_C=15.0" >> .env
-          echo "ALERT_TEMP_MAX_C=27.0" >> .env
-          echo "ALERT_HUMIDITY_MIN=30.0" >> .env
+          echo "ALERT_TEMP_MAX_C=32.0" >> .env
+          echo "ALERT_HUMIDITY_MIN=20.0" >> .env
           echo "ALERT_HUMIDITY_MAX=70.0" >> .env
           echo "STATUS_UPDATE_ENABLED=true" >> .env
           echo "STATUS_UPDATE_INTERVAL=3600" >> .env
