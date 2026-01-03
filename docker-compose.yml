@@ -1,5 +1,6 @@
 services:
   temp-monitor:
+    image: temp-monitor
     build: .
     privileged: true
     ports:
