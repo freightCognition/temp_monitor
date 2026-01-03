@@ -82,12 +82,13 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 |----------|---------|-------------|
 | `BEARER_TOKEN` | (required) | API authentication token |
 | `LOG_FILE` | `temp_monitor.log` | Log file path |
+| `CLOUDFLARED_TOKEN` | (none) | Cloudflare Tunnel token for docker-compose `cloudflared` service |
 
 ### Webhook Settings
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SLACK_WEBHOOK_URL` | (none) | Slack incoming webhook URL |
+| `SLACK_WEBHOOK_URL` | (optional) | Slack incoming webhook URL for alerts |
 | `WEBHOOK_ENABLED` | `true` | Enable/disable notifications |
 | `WEBHOOK_RETRY_COUNT` | `3` | Retry attempts (1-10) |
 | `WEBHOOK_RETRY_DELAY` | `5` | Initial retry delay in seconds |
@@ -227,6 +228,11 @@ docker compose down
 
 **Note**: Requires privileged mode for I2C/hardware access.
 
+**Cloudflare Tunnel (Optional):** To enable the bundled Cloudflare Tunnel:
+1. Add `CLOUDFLARED_TOKEN` to `.env`
+2. Start with the cloudflare profile: `docker compose --profile cloudflare up -d`
+3. In Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`
+
 ### Systemd Service
 
 ```bash
@@ -235,6 +241,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable temp-monitor.service
 sudo systemctl start temp-monitor.service
 ```
+
+If you are using Docker Compose, use `deployment/systemd/temp-monitor-compose.service` instead (update the `WorkingDirectory` and `User`).
 
 ### Production Configuration
 

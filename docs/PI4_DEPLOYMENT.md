@@ -44,7 +44,14 @@ sudo usermod -aG docker pi
 ```bash
 cd /path/to/temp_monitor
 docker compose up -d
+
+# Optional: Enable Cloudflare Tunnel
+# 1. Add CLOUDFLARED_TOKEN to .env
+# 2. Start with cloudflare profile:
+docker compose --profile cloudflare up -d
 ```
+
+**Note:** When using Cloudflare Tunnel, configure the service in Cloudflare Zero Trust as `http://temp-monitor:8080`.
 
 #### Monitoring
 ```bash
@@ -95,6 +102,8 @@ sudo systemctl status temp-monitor.service
 sudo journalctl -u temp-monitor.service -f
 ```
 
+> **Note:** If you are using Docker Compose, use `deployment/systemd/temp-monitor-compose.service` instead (update the `WorkingDirectory` and `User`).
+
 #### Useful Commands
 ```bash
 # Start/stop service
@@ -140,6 +149,10 @@ Create or update `.env` file in the application directory:
 # Logging
 LOG_FILE=/var/log/temp-monitor/temp_monitor.log
 
+# Cloudflare Tunnel (optional, Docker)
+# Configure the tunnel in Cloudflare Zero Trust with service http://temp-monitor:8080
+CLOUDFLARED_TOKEN=your-cloudflare-tunnel-token
+
 # Webhook Configuration
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 WEBHOOK_ENABLED=true
@@ -172,10 +185,10 @@ The `docker-compose.yml` includes:
 ### Systemd Service Configuration
 
 The `deployment/systemd/temp-monitor.service` includes:
-- Memory limits: 512MB
-- Watchdog timeout: 60 seconds
+- Memory limits: 512MB (hard limit: 600MB)
 - Restart policy: Always, with 10-second delays
-- Security settings: ProtectSystem, NoNewPrivileges
+- Security settings: ProtectSystem, NoNewPrivileges, ProtectHome (read-only)
+- I2C access: CAP_SYS_RAWIO capability
 
 ## Monitoring and Health Checks
 

@@ -33,9 +33,6 @@ StartLimitBurst=5
 MemoryLimit=512M
 MemoryMax=600M
 
-# Watchdog timeout (service must respond to health checks)
-WatchdogSec=60s
-
 # Output handling
 StandardOutput=journal
 StandardError=journal
@@ -44,8 +41,8 @@ SyslogIdentifier=temp-monitor
 # Security settings
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/log/temp-monitor /home/pi/temp_monitor/logs
+ProtectHome=read-only
+ReadWritePaths=/var/log/temp-monitor /home/pi/temp_monitor
 
 # Capabilities needed for I2C/Sense HAT access
 AmbientCapabilities=CAP_SYS_RAWIO
