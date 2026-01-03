@@ -99,8 +99,8 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ALERT_TEMP_MIN_C` | `15.0` | Low temperature alert (Celsius) |
-| `ALERT_TEMP_MAX_C` | `27.0` | High temperature alert (Celsius) |
-| `ALERT_HUMIDITY_MIN` | `30.0` | Low humidity alert (%) |
+| `ALERT_TEMP_MAX_C` | `32.0` | High temperature alert (Celsius) |
+| `ALERT_HUMIDITY_MIN` | `20.0` | Low humidity alert (%) |
 | `ALERT_HUMIDITY_MAX` | `70.0` | High humidity alert (%) |
 
 ### Periodic Status Updates

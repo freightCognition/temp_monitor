@@ -117,8 +117,8 @@ if slack_webhook_url:
 
     alert_thresholds = AlertThresholds(
         temp_min_c=float(os.getenv('ALERT_TEMP_MIN_C', '15.0')) if os.getenv('ALERT_TEMP_MIN_C') else None,
-        temp_max_c=float(os.getenv('ALERT_TEMP_MAX_C', '27.0')) if os.getenv('ALERT_TEMP_MAX_C') else None,
-        humidity_min=float(os.getenv('ALERT_HUMIDITY_MIN', '30.0')) if os.getenv('ALERT_HUMIDITY_MIN') else None,
+        temp_max_c=float(os.getenv('ALERT_TEMP_MAX_C', '32.0')) if os.getenv('ALERT_TEMP_MAX_C') else None,
+        humidity_min=float(os.getenv('ALERT_HUMIDITY_MIN', '20.0')) if os.getenv('ALERT_HUMIDITY_MIN') else None,
         humidity_max=float(os.getenv('ALERT_HUMIDITY_MAX', '70.0')) if os.getenv('ALERT_HUMIDITY_MAX') else None
     )
 

@@ -76,6 +76,12 @@ jobs:
             exit 1
           fi
 
+          # Validate CLOUDFLARED_TOKEN (required since we deploy with cloudflare profile)
+          if [ -z "${CLOUDFLARED_TOKEN}" ]; then
+            echo "Missing required secret: CLOUDFLARED_TOKEN"
+            exit 1
+          fi
+
           # Create .env file with required configuration
           echo "BEARER_TOKEN=${BEARER_TOKEN}" > .env
 
@@ -93,8 +99,8 @@ jobs:
           # Production monitoring defaults (intentionally enabled for production,
           # differs from local development defaults in .env.example)
           echo "ALERT_TEMP_MIN_C=15.0" >> .env
-          echo "ALERT_TEMP_MAX_C=27.0" >> .env
-          echo "ALERT_HUMIDITY_MIN=30.0" >> .env
+          echo "ALERT_TEMP_MAX_C=32.0" >> .env
+          echo "ALERT_HUMIDITY_MIN=20.0" >> .env
           echo "ALERT_HUMIDITY_MAX=70.0" >> .env
           echo "STATUS_UPDATE_ENABLED=true" >> .env
           echo "STATUS_UPDATE_INTERVAL=3600" >> .env
@@ -110,4 +116,4 @@ jobs:
         run: mkdir -p logs
 
       - name: Deploy with Docker Compose
-        run: docker compose -p temp-monitor up -d --build --remove-orphans
+        run: docker compose -p temp-monitor --profile cloudflare up -d --build --remove-orphans
