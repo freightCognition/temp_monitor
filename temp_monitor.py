@@ -87,6 +87,7 @@ sampling_interval = 60  # seconds between temperature updates
 app_start_time = time.time()
 request_counter = 0
 webhook_alert_counter = 0
+counters_lock = threading.Lock()
 sensor_thread = None  # Will be initialized when started
 
 # Periodic status update configuration
@@ -780,14 +781,14 @@ def start_sensor_thread():
 def increment_request_counter():
     """Middleware-like function to track requests"""
     global request_counter
-    with threading.Lock():
+    with counters_lock:
         request_counter += 1
 
 
 def increment_alert_counter():
     """Increment webhook alert counter"""
     global webhook_alert_counter
-    with threading.Lock():
+    with counters_lock:
         webhook_alert_counter += 1
 
 
