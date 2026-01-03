@@ -88,7 +88,7 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SLACK_WEBHOOK_URL` | (required) | Slack incoming webhook URL |
+| `SLACK_WEBHOOK_URL` | (optional) | Slack incoming webhook URL for alerts |
 | `WEBHOOK_ENABLED` | `true` | Enable/disable notifications |
 | `WEBHOOK_RETRY_COUNT` | `3` | Retry attempts (1-10) |
 | `WEBHOOK_RETRY_DELAY` | `5` | Initial retry delay in seconds |
@@ -228,7 +228,10 @@ docker compose down
 
 **Note**: Requires privileged mode for I2C/hardware access.
 
-Optional: add `CLOUDFLARED_TOKEN` to `.env` to enable the bundled Cloudflare Tunnel. In the Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`.
+**Cloudflare Tunnel (Optional):** To enable the bundled Cloudflare Tunnel:
+1. Add `CLOUDFLARED_TOKEN` to `.env`
+2. Start with the cloudflare profile: `docker compose --profile cloudflare up -d`
+3. In Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`
 
 ### Systemd Service
 

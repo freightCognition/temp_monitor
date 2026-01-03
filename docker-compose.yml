@@ -17,9 +17,9 @@ services:
     # Resource limits for Pi 4 (single-process deployment)
     mem_limit: 512m
     mem_reservation: 256m
-    # Health check for monitoring
+    # Health check for monitoring (checks /health endpoint every 30s)
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,3 +31,5 @@ services:
     depends_on:
       - temp-monitor
     restart: unless-stopped
+    profiles:
+      - cloudflare
