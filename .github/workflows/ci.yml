@@ -85,26 +85,31 @@ jobs:
 
       - name: Create .env from GitHub Secrets
         run: |
-          # Validate required secrets
-          missing=""
-          # Validate required secrets
-          missing=""
-          for var in BEARER_TOKEN; do
-            if [ -z "${!var}" ]; then
-              missing="$missing $var"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "Missing required secrets:$missing"
+          # Validate required secrets (BEARER_TOKEN is required for API auth)
+          if [ -z "${BEARER_TOKEN}" ]; then
+            echo "Missing required secret: BEARER_TOKEN"
             exit 1
           fi
 
-          # Create .env file with all configuration
+          # Create .env file with required configuration
           cat > .env <<EOF
 BEARER_TOKEN=${BEARER_TOKEN}
-CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN}
-SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-WEBHOOK_ENABLED=true
+EOF
+
+          # Add optional Cloudflare Tunnel token if configured
+          if [ -n "${CLOUDFLARED_TOKEN}" ]; then
+            echo "CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN}" >> .env
+          fi
+
+          # Add optional Slack webhook if configured (enables alerts/status updates)
+          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+            echo "SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}" >> .env
+            echo "WEBHOOK_ENABLED=true" >> .env
+          fi
+
+          # Production monitoring defaults (intentionally enabled for production,
+          # differs from local development defaults in .env.example)
+          cat >> .env <<EOF
 ALERT_TEMP_MIN_C=15.0
 ALERT_TEMP_MAX_C=27.0
 ALERT_HUMIDITY_MIN=30.0
