@@ -40,7 +40,7 @@ A lightweight environmental monitoring system for server rooms built on Raspberr
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/temp_monitor.git
+git clone https://github.com/freightcognition/temp_monitor.git
 cd temp_monitor
 python3 -m venv venv
 source venv/bin/activate
