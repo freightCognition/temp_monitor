@@ -29,8 +29,8 @@ class WebhookConfig:
 class AlertThresholds:
     """Temperature and humidity thresholds for alerts"""
     temp_min_c: Optional[float] = 15.0  # 59°F
-    temp_max_c: Optional[float] = 27.0  # 80.6°F
-    humidity_min: Optional[float] = 30.0
+    temp_max_c: Optional[float] = 32.0  # 90°F
+    humidity_min: Optional[float] = 20.0
     humidity_max: Optional[float] = 70.0
 
 
