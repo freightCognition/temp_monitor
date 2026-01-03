@@ -46,6 +46,8 @@ cd /path/to/temp_monitor
 docker compose up -d
 ```
 
+Optional: set `CLOUDFLARED_TOKEN` in `.env` before starting Docker Compose. In Cloudflare Zero Trust, configure the service as `http://temp-monitor:8080`.
+
 #### Monitoring
 ```bash
 # View logs
@@ -87,6 +89,9 @@ sudo cp deployment/systemd/temp-monitor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable temp-monitor.service
 sudo systemctl start temp-monitor.service
+
+# Check status
+If you are using Docker Compose, use `deployment/systemd/temp-monitor-compose.service` instead (update the `WorkingDirectory` and `User`).
 
 # Check status
 sudo systemctl status temp-monitor.service
@@ -139,6 +144,10 @@ Create or update `.env` file in the application directory:
 ```bash
 # Logging
 LOG_FILE=/var/log/temp-monitor/temp_monitor.log
+
+# Cloudflare Tunnel (optional, Docker)
+# Configure the tunnel in Cloudflare Zero Trust with service http://temp-monitor:8080
+CLOUDFLARED_TOKEN=your-cloudflare-tunnel-token
 
 # Webhook Configuration
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
