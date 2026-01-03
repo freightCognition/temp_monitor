@@ -297,7 +297,7 @@ def update_sensor_data():
                     alerts_sent = webhook_service.check_and_alert(
                         current_temp, current_humidity, last_updated
                     )
-                    if alerts_sent:
+                    if alerts_sent and any(alerts_sent.values()):
                         increment_alert_counter()
                         logging.info(f"Webhook alerts sent: {list(alerts_sent.keys())}")
                 except Exception as webhook_error:
