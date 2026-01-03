@@ -76,7 +76,7 @@ jobs:
             exit 1
           fi
 
-          # Validate CLOUDFLARED_TOKEN (required since we deploy with cloudflare profile)
+          # Validate CLOUDFLARED_TOKEN (required for cloudflared tunnel service)
           if [ -z "${CLOUDFLARED_TOKEN}" ]; then
             echo "Missing required secret: CLOUDFLARED_TOKEN"
             exit 1
@@ -116,4 +116,4 @@ jobs:
         run: mkdir -p logs
 
       - name: Deploy with Docker Compose
-        run: docker compose -p temp-monitor --profile cloudflare up -d --build --remove-orphans
+        run: docker compose -p temp-monitor up -d --build --remove-orphans

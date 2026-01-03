@@ -228,9 +228,9 @@ docker compose down
 
 **Note**: Requires privileged mode for I2C/hardware access.
 
-**Cloudflare Tunnel (Optional):** To enable the bundled Cloudflare Tunnel:
+**Cloudflare Tunnel:** The bundled Cloudflare Tunnel service starts automatically:
 1. Add `CLOUDFLARED_TOKEN` to `.env`
-2. Start with the cloudflare profile: `docker compose --profile cloudflare up -d`
+2. Start with: `docker compose up -d`
 3. In Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`
 
 ### Systemd Service
