@@ -102,6 +102,7 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 | `ALERT_TEMP_MAX_C` | `32.0` | High temperature alert (Celsius) |
 | `ALERT_HUMIDITY_MIN` | `20.0` | Low humidity alert (%) |
 | `ALERT_HUMIDITY_MAX` | `70.0` | High humidity alert (%) |
+| `ALERT_COOLDOWN_SECONDS` | `900` | Minimum time between repeating the same alert type |
 
 ### Periodic Status Updates
 

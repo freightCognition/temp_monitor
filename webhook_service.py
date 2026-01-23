@@ -38,11 +38,12 @@ class WebhookService:
     """Service for managing and sending webhooks"""
 
     def __init__(self, webhook_config: Optional[WebhookConfig] = None,
-                 alert_thresholds: Optional[AlertThresholds] = None):
+                 alert_thresholds: Optional[AlertThresholds] = None,
+                 alert_cooldown: Optional[int] = None):
         self.webhook_config = webhook_config
         self.alert_thresholds = alert_thresholds or AlertThresholds()
         self.last_alert_time = {}  # Track last alert per type to avoid spam
-        self.alert_cooldown = 300  # 5 minutes between same alert type
+        self.alert_cooldown = alert_cooldown if alert_cooldown is not None else 900
         self._lock = threading.Lock()
 
     def _mask_url(self, url: str) -> str:
