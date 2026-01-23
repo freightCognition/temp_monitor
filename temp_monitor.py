@@ -114,6 +114,7 @@ if slack_webhook_url:
         retry_delay=int(os.getenv('WEBHOOK_RETRY_DELAY', '5')),
         timeout=int(os.getenv('WEBHOOK_TIMEOUT', '10'))
     )
+    alert_cooldown_seconds = int(os.getenv('ALERT_COOLDOWN_SECONDS', '900'))
 
     alert_thresholds = AlertThresholds(
         temp_min_c=float(os.getenv('ALERT_TEMP_MIN_C', '15.0')) if os.getenv('ALERT_TEMP_MIN_C') else None,
@@ -122,7 +123,11 @@ if slack_webhook_url:
         humidity_max=float(os.getenv('ALERT_HUMIDITY_MAX', '70.0')) if os.getenv('ALERT_HUMIDITY_MAX') else None
     )
 
-    webhook_service = WebhookService(webhook_config, alert_thresholds)
+    webhook_service = WebhookService(
+        webhook_config,
+        alert_thresholds,
+        alert_cooldown=alert_cooldown_seconds
+    )
     logging.info("Webhook service initialized")
 else:
     logging.info("Webhook service not configured (no SLACK_WEBHOOK_URL)")
