@@ -339,3 +339,6 @@
 2026-04-22 01:47:35,886 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
 2026-04-22 01:47:36,708 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
 2026-04-22 01:47:36,709 - INFO - Temperature: 22.8°C, Humidity: 44.0%, CPU Temp: N/A
+2026-04-22 01:48:36,712 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
+2026-04-22 01:48:37,543 - ERROR - Failed to get CPU temperature: [Errno 2] No such file or directory: '/sys/class/thermal/thermal_zone0/temp'
+2026-04-22 01:48:37,543 - INFO - Temperature: 22.8°C, Humidity: 44.0%, CPU Temp: N/A
