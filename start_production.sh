@@ -56,4 +56,4 @@ waitress-serve \
     --threads=1 \
     --channel-timeout=120 \
     --connection-limit=50 \
-    --call wsgi:app
+    wsgi:app

@@ -55,6 +55,96 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# Global variables to store sensor data
+current_temp = 0
+current_humidity = 0
+last_updated = "Never"
+sampling_interval = 60  # seconds between temperature updates
+
+@app.route('/')
+def index():
+    """Web interface showing temperature and humidity"""
+    
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <title>Server Room Environmental Monitor</title>
+            <meta http-equiv="refresh" content="60">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+            <style>
+                body { 
+                    font-family: Arial, sans-serif; 
+                    text-align: center; 
+                    margin: 0;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }
+                .container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                    background-color: white;
+                    border-radius: 10px;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                h1 { color: #333; }
+                .reading {
+                    font-size: 72px;
+                    font-weight: bold;
+                    margin: 20px 0;
+                }
+                .temp { color: #e74c3c; }
+                .humidity { color: #3498db; }
+                .unit { font-size: 30px; }
+                .info { 
+                    margin-top: 30px;
+                    font-size: 14px;
+                    color: #777;
+                }
+                .fahrenheit {
+                    font-size: 24px;
+                    color: #888;
+                    margin-top: -20px;
+                    margin-bottom: 30px;
+                }
+                .logo {
+                    max-width: 100%;
+                    max-height: 200px;
+                    margin-bottom: 20px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <img src="{{ url_for('static', filename='My-img8bit-1com-Effect.gif') }}" alt="Company Logo" class="logo">
+                <h1>Server Room Environmental Monitor</h1>
+                
+                <h2>Temperature</h2>
+                <div class="reading temp">{{ temperature }}<span class="unit">°C</span></div>
+                <div class="fahrenheit">({{ fahrenheit }}°F)</div>
+                
+                <h2>Humidity</h2>
+                <div class="reading humidity">{{ humidity }}<span class="unit">%</span></div>
+                
+                <div class="info">
+                    Last updated: {{ last_updated }}<br>
+                    Monitoring device: Raspberry Pi 4 with Sense HAT<br>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+    fahrenheit = round((current_temp * 9/5) + 32, 1)
+    return render_template_string(
+        html_template, 
+        temperature=current_temp, 
+        fahrenheit=fahrenheit,
+        humidity=current_humidity, 
+        last_updated=last_updated
+    )
+
 # Initialize Flask-RESTX API with Swagger documentation
 api = Api(
     app,
@@ -76,12 +166,6 @@ api = Api(
 
 # Register the webhooks namespace
 api.add_namespace(webhooks_ns, path='/api/webhook')
-
-# Global variables to store sensor data
-current_temp = 0
-current_humidity = 0
-last_updated = "Never"
-sampling_interval = 60  # seconds between temperature updates
 
 # Metrics tracking for production deployment
 app_start_time = time.time()
@@ -347,90 +431,6 @@ def update_sensor_data():
         except Exception as e:
             logging.error(f"Error updating sensor data: {e}")
             time.sleep(5)  # Short sleep before retry on error
-
-@app.route('/')
-def index():
-    """Web interface showing temperature and humidity"""
-    
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-        <head>
-            <title>Server Room Environmental Monitor</title>
-            <meta http-equiv="refresh" content="60">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
-            <style>
-                body { 
-                    font-family: Arial, sans-serif; 
-                    text-align: center; 
-                    margin: 0;
-                    padding: 20px;
-                    background-color: #f5f5f5;
-                }
-                .container {
-                    max-width: 800px;
-                    margin: 0 auto;
-                    background-color: white;
-                    border-radius: 10px;
-                    padding: 20px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }
-                h1 { color: #333; }
-                .reading {
-                    font-size: 72px;
-                    font-weight: bold;
-                    margin: 20px 0;
-                }
-                .temp { color: #e74c3c; }
-                .humidity { color: #3498db; }
-                .unit { font-size: 30px; }
-                .info { 
-                    margin-top: 30px;
-                    font-size: 14px;
-                    color: #777;
-                }
-                .fahrenheit {
-                    font-size: 24px;
-                    color: #888;
-                    margin-top: -20px;
-                    margin-bottom: 30px;
-                }
-                .logo {
-                    max-width: 100%;
-                    max-height: 200px;
-                    margin-bottom: 20px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <img src="{{ url_for('static', filename='My-img8bit-1com-Effect.gif') }}" alt="Company Logo" class="logo">
-                <h1>Server Room Environmental Monitor</h1>
-                
-                <h2>Temperature</h2>
-                <div class="reading temp">{{ temperature }}<span class="unit">°C</span></div>
-                <div class="fahrenheit">({{ fahrenheit }}°F)</div>
-                
-                <h2>Humidity</h2>
-                <div class="reading humidity">{{ humidity }}<span class="unit">%</span></div>
-                
-                <div class="info">
-                    Last updated: {{ last_updated }}<br>
-                    Monitoring device: Raspberry Pi 4 with Sense HAT<br>
-                </div>
-            </div>
-        </body>
-    </html>
-    """
-    fahrenheit = round((current_temp * 9/5) + 32, 1)
-    return render_template_string(
-        html_template, 
-        temperature=current_temp, 
-        fahrenheit=fahrenheit,
-        humidity=current_humidity, 
-        last_updated=last_updated
-    )
 
 @app.route('/api/temp')
 @require_token
