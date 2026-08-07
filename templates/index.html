@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Server Room Environmental Monitor</title>
+    <meta http-equiv="refresh" content="60">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg:       #1a1c2c;
+            --panel:    #0d0f1a;
+            --gold:     #ffcd75;
+            --red:      #ff004d;
+            --blue:     #29adff;
+            --green:    #00e756;
+            --white:    #fff1e8;
+            --dim:      #7e7f9a;
+            --border:   #5f5777;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--white);
+            font-family: "Press Start 2P", monospace;
+            font-size: 8px;
+            line-height: 2;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 32px 16px 48px;
+
+            /* pixel grid background */
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        /* ---- pixel window frame ---- */
+        .window {
+            width: 100%;
+            max-width: 480px;
+            background: var(--panel);
+
+            /* chamfered pixel corners via clip-path */
+            clip-path: polygon(
+                8px 0%, calc(100% - 8px) 0%,
+                100% 8px, 100% calc(100% - 8px),
+                calc(100% - 8px) 100%, 8px 100%,
+                0% calc(100% - 8px), 0% 8px
+            );
+
+            /* outer border via outline + box-shadow trick */
+            outline: 4px solid var(--border);
+            outline-offset: -4px;
+        }
+
+        /* ---- sections ---- */
+        .section {
+            padding: 24px 28px;
+            border-bottom: 4px solid var(--border);
+        }
+        .section:last-child { border-bottom: none; }
+
+        /* ---- logo section ---- */
+        .logo-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            padding: 24px 28px 20px;
+            border-bottom: 4px solid var(--border);
+            background: #12131f;
+        }
+        .logo {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+        }
+        .title-block {
+            text-align: center;
+            line-height: 2.2;
+        }
+        .title-block .line1 { color: var(--gold); font-size: 10px; }
+        .title-block .line2 { color: var(--dim);  font-size: 7px;  }
+
+        /* ---- label + value rows ---- */
+        .stat-label {
+            color: var(--dim);
+            font-size: 7px;
+            letter-spacing: 0.08em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-label::before {
+            content: "▶";
+            color: var(--gold);
+            font-size: 6px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            line-height: 1;
+            margin-bottom: 10px;
+            letter-spacing: -0.02em;
+        }
+        .stat-value.temp     { color: var(--red);  }
+        .stat-value.humidity { color: var(--blue); }
+
+        .stat-value .unit {
+            font-size: 12px;
+            vertical-align: super;
+            margin-left: 4px;
+            opacity: 0.8;
+        }
+
+        .sub-value {
+            color: var(--dim);
+            font-size: 8px;
+            margin-bottom: 4px;
+        }
+
+        /* divider between temp and humidity */
+        .stat-divider {
+            height: 4px;
+            background: var(--border);
+            margin: 20px 0;
+        }
+
+        /* ---- system info rows ---- */
+        .info-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+        .info-row:last-child { margin-bottom: 0; }
+        .info-key   { color: var(--dim);   font-size: 7px; }
+        .info-val   { color: var(--white); font-size: 8px; line-height: 1.8; }
+
+        /* ---- status pill ---- */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 28px;
+            background: #12131f;
+            border-top: 4px solid var(--border);
+        }
+        .status-bar .left { color: var(--dim); font-size: 7px; }
+        .status-pill {
+            font-size: 7px;
+            color: var(--green);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-pill::before {
+            content: "■";
+            animation: blink 1.4s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div class="window">
+
+        <!-- logo + title -->
+        <div class="logo-section">
+            <img src="{{ url_for('static', filename='My-img8bit-1com-Effect.gif') }}"
+                 alt="Company Logo" class="logo">
+            <div class="title-block">
+                <div class="line1">SERVER ROOM</div>
+                <div class="line1">ENVIRONMENTAL</div>
+                <div class="line1">MONITOR</div>
+                <div class="line2">LINEHAUL-HQ · RACK_01</div>
+            </div>
+        </div>
+
+        <!-- readings -->
+        <div class="section">
+
+            <div class="stat-label">TEMPERATURE</div>
+            <div class="stat-value temp">
+                {{ temperature }}<span class="unit">°C</span>
+            </div>
+            <div class="sub-value">({{ fahrenheit }}°F)</div>
+
+            <div class="stat-divider"></div>
+
+            <div class="stat-label">HUMIDITY</div>
+            <div class="stat-value humidity">
+                {{ humidity }}<span class="unit">%</span>
+            </div>
+            <div class="sub-value">RELATIVE</div>
+
+        </div>
+
+        <!-- system info -->
+        <div class="section">
+            <div class="info-row">
+                <span class="info-key">LAST UPDATED</span>
+                <span class="info-val">{{ last_updated }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-key">MONITORING DEVICE</span>
+                <span class="info-val">RASPBERRY PI 4<br>WITH SENSE HAT</span>
+            </div>
+        </div>
+
+        <!-- status bar -->
+        <div class="status-bar">
+            <span class="left">REFRESH: 60S</span>
+            <span class="status-pill">LIVE</span>
+        </div>
+
+    </div>
+
+</body>
+</html>

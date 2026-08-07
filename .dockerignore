@@ -1,0 +1,25 @@
+.git
+.github
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+*.bak
+.env
+.env.*
+!.env.example
+.vscode
+.claude
+.agents
+.codex
+.cursor
+deployment
+logs/
+*.md
+LICENSE
+skills-lock.json
+test_*.py
+
+# Never ship the fake-sensor stub into the production image — see Dockerfile.
+sense_hat.py
+mock_sense_hat.py

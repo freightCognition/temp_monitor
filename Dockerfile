@@ -26,8 +26,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY temp_monitor.py webhook_service.py sense_hat.py api_models.py wsgi.py ./
+# NOTE: sense_hat.py / mock_sense_hat.py are intentionally NOT copied here.
+# Production must import the real sense-hat package (installed above); the
+# mock exists only for local dev when USE_MOCK_SENSOR=1. See .dockerignore.
+COPY temp_monitor.py webhook_service.py api_models.py wsgi.py ./
 COPY static ./static
+COPY templates ./templates
 
 # Create directories for volumes
 RUN mkdir -p /app/logs /app/static
@@ -37,7 +41,7 @@ EXPOSE 8080
 
 # Health check for monitoring and load balancers
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)" || exit 1
 
 # Use Waitress for production deployment
 CMD ["waitress-serve", "--host=0.0.0.0", "--port=8080", "--threads=1", "--channel-timeout=120", "wsgi:app"]

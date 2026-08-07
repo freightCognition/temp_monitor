@@ -83,6 +83,12 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 | `BEARER_TOKEN` | (required) | API authentication token |
 | `LOG_FILE` | `temp_monitor.log` | Log file path |
 | `CLOUDFLARED_TOKEN` | (required for CI) | Cloudflare Tunnel token for docker-compose `cloudflared` service (optional for local dev) |
+| `USE_MOCK_SENSOR` | `false` | Load the fabricated-data stub (`mock_sense_hat.py`) instead of real hardware. Never set in production — see note below. |
+| `TEMP_CPU_FACTOR` | `0.7` | CPU-heat coupling coefficient used in temperature compensation |
+| `TEMP_OFFSET_F` | `-13.5` | Empirical temperature offset (°F) used in temperature compensation |
+| `HUMIDITY_OFFSET` | `4.0` | Empirical humidity offset (percentage points) |
+
+**Mock sensor note:** `USE_MOCK_SENSOR=true` loads `mock_sense_hat.py` instead of the real `sense-hat` package, for development on non-Raspberry Pi hardware. This file was previously named `sense_hat.py`, which shadowed the real package on `sys.path` and made the app silently report a constant fabricated 25.0°C/40.0% in production. It was renamed specifically so it can no longer collide with the real package name — never set `USE_MOCK_SENSOR` in production.
 
 ### Webhook Settings
 
@@ -102,6 +108,7 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 | `ALERT_TEMP_MAX_C` | `32.0` | High temperature alert (Celsius) |
 | `ALERT_HUMIDITY_MIN` | `20.0` | Low humidity alert (%) |
 | `ALERT_HUMIDITY_MAX` | `70.0` | High humidity alert (%) |
+| `ALERT_COOLDOWN_SECONDS` | `900` | Minimum time between repeating the same alert type |
 
 ### Periodic Status Updates
 
@@ -120,7 +127,6 @@ All configuration is done via environment variables in `.env`. Copy `.env.exampl
 | `/` | GET | Web dashboard |
 | `/docs` | GET | Swagger UI documentation |
 | `/health` | GET | Health check for load balancers |
-| `/metrics` | GET | Application and system metrics |
 
 ### Protected Endpoints (Bearer Token Required)
 
@@ -133,6 +139,7 @@ Include header: `Authorization: Bearer YOUR_TOKEN`
 | `/api/temp` | GET | Current temperature and humidity |
 | `/api/raw` | GET | Raw sensor data for debugging |
 | `/api/verify-token` | GET | Validate authentication token |
+| `/metrics` | GET | Application and system metrics (exposes process internals, so it requires a token since the service is reachable over a public tunnel) |
 
 #### Webhook Management
 
@@ -194,7 +201,7 @@ When configured with a Slack webhook URL, the system sends alerts when readings 
 
 ### Features
 
-- **Alert Cooldown**: 5-minute cooldown between same alert type (prevents spam)
+- **Alert Cooldown**: 900-second (15-minute) cooldown between same alert type (prevents spam), configurable via `ALERT_COOLDOWN_SECONDS`
 - **Exponential Backoff**: Retries with increasing delays on failure
 - **URL Masking**: Webhook URLs are masked in API responses and logs for security
 
@@ -233,7 +240,7 @@ docker compose down
 2. Start with: `docker compose up -d`
 3. In Cloudflare Zero Trust UI, point the tunnel service at `http://temp-monitor:8080`
 
-**Note:** `CLOUDFLARED_TOKEN` is **required for CI/production** - the CI workflow (`.github/workflows/ci.yml:79-83`) enforces this and will fail deployment if missing. For **local development**, the token is optional: if not set, the cloudflared service will fail to start but the main temp-monitor service continues working. To run locally without Cloudflare Tunnel, use `docker compose up -d temp-monitor`.
+**Note:** `CLOUDFLARED_TOKEN` is **required for CI/production** - the CI workflow's `CLOUDFLARED_TOKEN` validation step (in `.github/workflows/ci.yml`) enforces this and will fail deployment if missing. For **local development**, the token is optional: if not set, the cloudflared service will fail to start but the main temp-monitor service continues working. To run locally without Cloudflare Tunnel, use `docker compose up -d temp-monitor`.
 
 ### Systemd Service
 
@@ -257,13 +264,13 @@ For detailed production deployment, see [docs/PI4_DEPLOYMENT.md](docs/PI4_DEPLOY
 
 ## Temperature Compensation
 
-The Sense HAT is affected by CPU heat. The system compensates using:
+The Sense HAT sits directly above the CPU, so raw readings run hot. The system compensates using:
 
 ```
-compensated_temp = raw_temp - ((cpu_temp - raw_temp) * factor)
+comp_c = raw_c - (cpu_c - raw_c) * TEMP_CPU_FACTOR + (TEMP_OFFSET_F * 5/9)
 ```
 
-The default factor is `0.7`. Adjust in `temp_monitor.py` if readings seem inaccurate.
+`TEMP_CPU_FACTOR` (default `0.7`) tracks the CPU-heat coupling; `TEMP_OFFSET_F` (default `-13.5`) is an empirical single-point offset. Both are set via environment variables — no code change or rebuild needed to recalibrate. See [CLAUDE.md](CLAUDE.md#common-issues--solutions) for the full calibration procedure.
 
 ## Troubleshooting
 
@@ -271,7 +278,7 @@ The default factor is `0.7`. Adjust in `temp_monitor.py` if readings seem inaccu
 |-------|----------|
 | Sense HAT not detected | Enable I2C via `sudo raspi-config`, check connection |
 | Port 8080 blocked | Check firewall: `sudo ufw allow 8080` |
-| Inaccurate temperature | Adjust compensation factor in code |
+| Inaccurate temperature | Adjust `TEMP_CPU_FACTOR` / `TEMP_OFFSET_F` in `.env` (no rebuild needed) |
 | Webhook failures | Check URL, network connectivity, view logs |
 | API returns 401/403 | Verify Bearer token in request header |
 | Service won't start | Check logs: `journalctl -u temp-monitor -f` |

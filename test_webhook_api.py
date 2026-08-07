@@ -6,33 +6,23 @@ Tests the REST API endpoints that manage webhook configuration,
 focusing on the bug fix for AttributeError when creating new webhook service.
 """
 
-import sys
-import os
 import json
+import sys
 import unittest
-from unittest.mock import Mock, patch, MagicMock
 
-# Mock the sense_hat module before importing temp_monitor
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase
 
-# Now import after mocking
-from temp_monitor import app, webhook_service
+from temp_monitor import webhook_service
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 
 
-class TestWebhookAPIEndpoints(unittest.TestCase):
+class TestWebhookAPIEndpoints(BaseAPITestCase):
     """Test Flask-RESTX webhook API endpoints"""
 
     def setUp(self):
         """Set up test client and test data"""
-        self.app = app
-        self.app.config['TESTING'] = True
-        self.client = self.app.test_client()
-
-        # Get bearer token from environment
-        self.token = os.getenv('BEARER_TOKEN', 'test_token_12345')
-        self.auth_header = {'Authorization': f'Bearer {self.token}'}
-
+        super().setUp()
         # Save original webhook_service state
         self.original_webhook_service = webhook_service
 
@@ -386,8 +376,13 @@ class TestWebhookAPIEndpoints(unittest.TestCase):
             headers={'Authorization': 'Bearer invalid_token_xyz'}
         )
 
-        # Should fail with 403 Forbidden
-        self.assertEqual(response.status_code, 403)
+        # Should fail with 401 Unauthorized.
+        # Previously asserted 403. A wrong token now returns 401 with a
+        # WWW-Authenticate header so that clients which retry-on-401 actually
+        # retry; 403 would tell them the credential was accepted but the
+        # action forbidden, which is not what happened.
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers.get('WWW-Authenticate'), 'Bearer')
 
     def test_webhook_url_masking(self):
         """Test that webhook URLs are masked in API responses for security
