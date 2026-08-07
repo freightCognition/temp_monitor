@@ -72,6 +72,10 @@ Environment variables (from `.env`):
 - `STATUS_UPDATE_ENABLED` - Enable periodic status updates (default: false)
 - `STATUS_UPDATE_INTERVAL` - Status update frequency in seconds (default: 3600)
 - `STATUS_UPDATE_ON_STARTUP` - Send status update on startup (default: false)
+- `USE_MOCK_SENSOR` - Load the fabricated-data stub instead of real hardware (default: unset/off). Never set in production.
+- `TEMP_CPU_FACTOR` - CPU-heat coupling coefficient (default: 0.7). See "Temperature Calibration" below.
+- `TEMP_OFFSET_F` - Empirical temperature offset in °F (default: -13.5)
+- `HUMIDITY_OFFSET` - Empirical humidity offset in percentage points (default: 4.0)
 
 ## Key Design Patterns
 
@@ -195,8 +199,38 @@ Critical areas to test:
 - Verify with: `i2cdetect -y 1`
 
 **Temperature Calibration**
-- Adjust `factor` in `get_compensated_temperature()` (line 191) based on actual readings
-- CPU heat affects accuracy; hardware compensation attempts to correct this
+
+The reported temperature is an *estimate* of ambient air derived from a sensor
+sitting directly above the SoC, which heats it:
+
+```
+comp_c = raw_c - (cpu_c - raw_c) * TEMP_CPU_FACTOR + (TEMP_OFFSET_F * 5/9)
+```
+
+Both parameters are empirical and are set via environment variables — no code
+change or rebuild is needed to recalibrate. `GET /api/raw` echoes the active
+calibration alongside `raw_temperature` and `cpu_temperature`.
+
+Important history: until the `sense_hat.py` stub was renamed to
+`mock_sense_hat.py`, that stub shadowed the real `sense-hat` package on
+`sys.path`, so the process read a constant fabricated 25.0 °C. Any calibration
+predating that rename was tuned against fabricated data and is meaningless.
+
+`TEMP_OFFSET_F` alone is a *single-point* calibration — exact only near the CPU
+temperature at which it was measured. `TEMP_CPU_FACTOR` is what tracks varying
+CPU load. To solve for it properly, collect paired samples at two clearly
+different CPU temperatures (idle and under load), each with a trusted reference
+thermometer reading, then solve:
+
+```
+factor = (raw₁ - raw₂ - (ref₁ - ref₂)) / ((cpu₁ - raw₁) - (cpu₂ - raw₂))
+offset_c = ref₁ - raw₁ + (cpu₁ - raw₁) * factor
+```
+
+Note that the raw reading currently averages the humidity sensor and the
+pressure sensor, which are differently calibrated (the pressure sensor reads
+hotter). That bias is presently absorbed into `TEMP_OFFSET_F`; if the averaging
+is ever changed, recalibrate rather than keeping the old offset.
 
 **Webhook Failures**
 - Check Slack webhook URL format: `https://hooks.slack.com/services/...`

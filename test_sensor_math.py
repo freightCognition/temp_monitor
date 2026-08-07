@@ -64,21 +64,21 @@ class TestGetCompensatedTemperature(unittest.TestCase):
     def test_uniform_readings_with_cpu_compensation(self, mock_cpu, mock_sleep):
         # raw = 20.0C uniform, cpu = 30.0C
         # comp = 20.0 - ((30.0-20.0)*0.7) = 13.0
-        # comp -= 4*5/9 (=2.222..)          = 10.777... -> round 10.8
+        # comp += -13.5*5/9 (=-7.5)         = 5.5
         self._set_raw_readings([20.0] * 5, [20.0] * 5)
         temp = temp_monitor.get_compensated_temperature()
-        self.assertEqual(temp, 10.8)
+        self.assertEqual(temp, 5.5)
         self.assertTrue(temp_monitor.current_temp_compensated)
 
     @patch('temp_monitor.time.sleep', return_value=None)
     @patch('temp_monitor.get_cpu_temperature', return_value=None)
     def test_cpu_unavailable_uses_raw_and_flags_uncompensated(self, mock_cpu, mock_sleep):
         # raw = 20.0C uniform, cpu unavailable -> no compensation term applied
-        # comp = 20.0 - 2.222... = 17.777... -> round 17.8
+        # comp = 20.0 - 7.5 = 12.5
         self._set_raw_readings([20.0] * 5, [20.0] * 5)
         with self.assertLogs(level='WARNING') as log_ctx:
             temp = temp_monitor.get_compensated_temperature()
-        self.assertEqual(temp, 17.8)
+        self.assertEqual(temp, 12.5)
         self.assertFalse(temp_monitor.current_temp_compensated)
         self.assertTrue(any('cpu temperature' in msg.lower() for msg in log_ctx.output))
 
@@ -95,16 +95,104 @@ class TestGetCompensatedTemperature(unittest.TestCase):
             sorted:  [20,20,20,20,20, 24,24,24,24,24]
             trimmed: [20,20,20,20,   24,24,24,24]      (8 left)
             mean = (80 + 96) / 8 = 22.0
-            comp = 22.0 - 4*5/9 = 19.777... -> round 19.8
+            comp = 22.0 + (-13.5*5/9) = 22.0 - 7.5 = 14.5
         This pins the CURRENT behavior. It is not correct behavior -- it's
         documentation. If get_compensated_temperature() is later fixed to
-        filter outliers per-sensor, this expected value (19.8) will change
+        filter outliers per-sensor, this expected value (14.5) will change
         and this test must be updated deliberately, not silently.
+
+        NOTE: this blend bias is currently ABSORBED INTO the empirical
+        TEMP_OFFSET_F calibration -- the operator measured the +9.5F error
+        with this blending in place. Fixing the blend and keeping the
+        offset would double-correct. Recalibrate if the blend is ever fixed.
         """
         self._set_raw_readings([20.0] * 5, [24.0] * 5)
         temp = temp_monitor.get_compensated_temperature()
-        self.assertEqual(temp, 19.8)
+        self.assertEqual(temp, 14.5)
         self.assertFalse(temp_monitor.current_temp_compensated)
+
+
+class TestCalibrationIsOperatorTunable(unittest.TestCase):
+    """Regression tests for the production defect where reported temperature
+    ran +9.5F hot against the operator's reference thermometer.
+
+    Root cause of *why now*: until this branch, the repo shipped a stub named
+    sense_hat.py that shadowed the real sense-hat package on sys.path, so the
+    process read a constant fabricated 25.0C. The compensation constants had
+    therefore never been validated against real hardware. Renaming the stub
+    exposed the real (uncalibrated) reading.
+
+    These tests pin (a) the corrected default and (b) that both calibration
+    parameters are genuinely wired to the module globals, so an operator can
+    recalibrate via TEMP_CPU_FACTOR / TEMP_OFFSET_F without a code change.
+    """
+
+    def setUp(self):
+        self._orig_factor = temp_monitor.temp_cpu_factor
+        self._orig_offset = temp_monitor.temp_offset_f
+        self._orig_humidity_offset = temp_monitor.humidity_offset
+        self._orig_compensated = temp_monitor.current_temp_compensated
+
+    def tearDown(self):
+        temp_monitor.temp_cpu_factor = self._orig_factor
+        temp_monitor.temp_offset_f = self._orig_offset
+        temp_monitor.humidity_offset = self._orig_humidity_offset
+        temp_monitor.current_temp_compensated = self._orig_compensated
+
+    def _set_raw_readings(self, humidity_sensor_values, pressure_sensor_values):
+        temp_monitor.sense.get_temperature_from_humidity = MagicMock(
+            side_effect=humidity_sensor_values
+        )
+        temp_monitor.sense.get_temperature_from_pressure = MagicMock(
+            side_effect=pressure_sensor_values
+        )
+
+    def test_default_offset_is_nine_point_five_f_cooler_than_the_old_constant(self):
+        """The shipped default must read exactly 9.5F cooler than the old
+        hardcoded -4.0F offset -- that is the measured field error."""
+        self.assertAlmostEqual(temp_monitor.temp_offset_f, -4.0 - 9.5, places=6)
+
+    @patch('temp_monitor.time.sleep', return_value=None)
+    @patch('temp_monitor.get_cpu_temperature', return_value=51.121)
+    def test_reported_temp_drops_by_9_5f_at_the_field_operating_point(self, _cpu, _sleep):
+        """Reproduces the reported field conditions (CPU 51.121C, the raw
+        reading that yielded the 27.7C shown in Slack) and asserts the new
+        default reports 9.5F -- 5.2777C -- cooler than the old constant did.
+        """
+        raw = 38.65  # solves 1.7*raw - 0.7*51.121 - (4*5/9) = 27.7
+
+        temp_monitor.temp_offset_f = -4.0  # old, pre-fix default
+        self._set_raw_readings([raw] * 5, [raw] * 5)
+        before = temp_monitor.get_compensated_temperature()
+
+        temp_monitor.temp_offset_f = self._orig_offset  # shipped default
+        self._set_raw_readings([raw] * 5, [raw] * 5)
+        after = temp_monitor.get_compensated_temperature()
+
+        self.assertAlmostEqual(before, 27.7, places=1)
+        self.assertAlmostEqual(before - after, 9.5 * 5 / 9, places=1)
+
+    @patch('temp_monitor.time.sleep', return_value=None)
+    @patch('temp_monitor.get_cpu_temperature', return_value=30.0)
+    def test_cpu_factor_is_read_from_the_module_global(self, _cpu, _sleep):
+        """A changed TEMP_CPU_FACTOR must actually move the output, i.e. the
+        0.7 is no longer hardcoded inside the function."""
+        temp_monitor.temp_offset_f = 0.0
+        temp_monitor.temp_cpu_factor = 0.0
+        self._set_raw_readings([20.0] * 5, [20.0] * 5)
+        # factor 0.0 -> no CPU term at all -> raw passes through
+        self.assertEqual(temp_monitor.get_compensated_temperature(), 20.0)
+
+        temp_monitor.temp_cpu_factor = 0.2
+        self._set_raw_readings([20.0] * 5, [20.0] * 5)
+        # 20.0 - ((30.0-20.0)*0.2) = 18.0
+        self.assertEqual(temp_monitor.get_compensated_temperature(), 18.0)
+
+    @patch('temp_monitor.time.sleep', return_value=None)
+    def test_humidity_offset_is_read_from_the_module_global(self, _sleep):
+        temp_monitor.humidity_offset = 0.0
+        temp_monitor.sense.get_humidity = MagicMock(side_effect=[30.0, 40.0, 50.0])
+        self.assertEqual(temp_monitor.get_humidity(), 40.0)
 
 
 class TestGetHumidity(unittest.TestCase):

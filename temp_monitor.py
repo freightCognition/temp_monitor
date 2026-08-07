@@ -213,6 +213,37 @@ if status_update_enabled and status_update_interval < sampling_interval:
 # to WebhookService's hardcoded 900s default.
 alert_cooldown_seconds = _parse_env_number('ALERT_COOLDOWN_SECONDS', '900', int)
 
+# --- Temperature calibration -------------------------------------------------
+#
+# get_compensated_temperature() estimates ambient temperature from a sensor
+# that is physically heated by the SoC underneath it:
+#
+#     comp_c = raw_c - (cpu_c - raw_c) * TEMP_CPU_FACTOR + TEMP_OFFSET_F(as C)
+#
+# Both parameters are empirical and MUST be calibrated against a trusted
+# reference thermometer in the room where the unit actually runs. They were
+# previously hardcoded, which mattered because until the mock-sensor shadowing
+# bug was fixed (see the USE_MOCK_SENSOR note at the top of this file) the
+# process was reading a stub that returned a constant 25.0C -- so these
+# constants had never been validated against real hardware at all.
+#
+# TEMP_OFFSET_F default (-13.5F): the previous -4.0F default was measured to
+# read +9.5F hot against the operator's reference thermometer on real
+# hardware, so the default is -4.0 - 9.5 = -13.5. This is a SINGLE-POINT
+# calibration: it is exact only near the CPU temperature at which it was
+# measured. TEMP_CPU_FACTOR is what corrects for varying CPU load, and
+# solving for it properly needs paired (raw, cpu, reference) samples taken at
+# two different CPU temperatures -- see /api/raw, which reports raw_temperature
+# and cpu_temperature alongside the active calibration for exactly this.
+temp_cpu_factor = _parse_env_number('TEMP_CPU_FACTOR', '0.7', float)
+temp_offset_f = _parse_env_number('TEMP_OFFSET_F', '-13.5', float)
+humidity_offset = _parse_env_number('HUMIDITY_OFFSET', '4.0', float)
+
+logging.info(
+    f"Temperature calibration active: cpu_factor={temp_cpu_factor}, "
+    f"offset={temp_offset_f}F, humidity_offset={humidity_offset}%"
+)
+
 # Initialize webhook service
 webhook_service = None
 slack_webhook_url = os.getenv('SLACK_WEBHOOK_URL')
@@ -443,8 +474,9 @@ def get_compensated_temperature():
 
     # Apply compensation formula based on calibration
     # This formula assumes the CPU is significantly warmer than the ambient temperature
-    # The factor of 0.7 is an approximation that should be calibrated
-    factor = 0.7
+    # `factor` is empirical and operator-tunable via TEMP_CPU_FACTOR -- see the
+    # calibration block near the top of this file.
+    factor = temp_cpu_factor
     if cpu_temp is not None:
         comp_temp = raw_temp - ((cpu_temp - raw_temp) * factor)
         current_temp_compensated = True
@@ -457,8 +489,10 @@ def get_compensated_temperature():
             "compensation as if the CPU reading had succeeded."
         )
 
-    # Correction: Adjust by -4°F (old -10°F was too aggressive, actual needs -4°F)
-    comp_temp = comp_temp - (4 * 5 / 9)
+    # Empirical offset, expressed in °F for calibration against a reference
+    # thermometer and converted to a °C delta here (°F degrees are 5/9 the
+    # size of °C degrees; this is a delta, so there is no 32 term).
+    comp_temp = comp_temp + (temp_offset_f * 5 / 9)
 
     return round(comp_temp, 1)
 
@@ -477,8 +511,8 @@ def get_humidity():
     
     humidity = statistics.mean(readings)
 
-    # Correction: Adjust by +4% (old +10% was too aggressive, actual needs +4%)
-    humidity += 4
+    # Empirical correction, operator-tunable via HUMIDITY_OFFSET
+    humidity += humidity_offset
 
     # Ensure humidity doesn't exceed 100%
     if humidity > 100:
@@ -610,7 +644,15 @@ def api_raw():
         'compensated_temperature': current_temp,
         'compensated': current_temp_compensated,
         'humidity': current_humidity,
-        'timestamp': last_updated
+        'timestamp': last_updated,
+        # Echo the active calibration so an operator comparing this endpoint
+        # against a reference thermometer can see exactly which constants
+        # produced compensated_temperature, without shelling into the box.
+        'calibration': {
+            'cpu_factor': temp_cpu_factor,
+            'offset_f': temp_offset_f,
+            'humidity_offset': humidity_offset,
+        },
     })
 
 # Add an endpoint to check if token is valid
