@@ -64,9 +64,18 @@ jobs:
         run: docker build -t temp-monitor:ci .
 
       - name: Run container
+        # This runner is an x86 cloud VM with no Sense HAT, so the real
+        # sense-hat package raises "Cannot detect RPi-Sense FB device" at
+        # import and the server dies before it can bind a port. The mock is
+        # deliberately kept OUT of the image (see Dockerfile / .dockerignore),
+        # so it is bind-mounted in from the checkout instead: the image under
+        # test stays byte-for-byte identical to what ships to the Pi, and the
+        # stub exists only for the lifetime of this container.
         run: |
           docker run -d --name temp-monitor-ci -p 8080:8080 \
             -e BEARER_TOKEN=test_token_ci \
+            -e USE_MOCK_SENSOR=1 \
+            -v "${GITHUB_WORKSPACE}/mock_sense_hat.py:/app/mock_sense_hat.py:ro" \
             temp-monitor:ci
 
       - name: Wait for service to come up
