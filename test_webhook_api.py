@@ -386,8 +386,13 @@ class TestWebhookAPIEndpoints(unittest.TestCase):
             headers={'Authorization': 'Bearer invalid_token_xyz'}
         )
 
-        # Should fail with 403 Forbidden
-        self.assertEqual(response.status_code, 403)
+        # Should fail with 401 Unauthorized.
+        # Previously asserted 403. A wrong token now returns 401 with a
+        # WWW-Authenticate header so that clients which retry-on-401 actually
+        # retry; 403 would tell them the credential was accepted but the
+        # action forbidden, which is not what happened.
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers.get('WWW-Authenticate'), 'Bearer')
 
     def test_webhook_url_masking(self):
         """Test that webhook URLs are masked in API responses for security

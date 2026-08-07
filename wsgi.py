@@ -12,7 +12,6 @@ Or in docker-compose.yml:
 """
 
 import logging
-import time
 from temp_monitor import app, start_sensor_thread
 
 # Configure logging
@@ -21,10 +20,10 @@ logger = logging.getLogger(__name__)
 # Start background sensor thread when this module is imported
 try:
     logger.info("Initializing sensor thread for production deployment...")
+    # start_sensor_thread() already waits for the thread to come up before
+    # returning (see temp_monitor.py). A second sleep here just delayed
+    # every startup by another 2s for no benefit (S14).
     sensor_thread = start_sensor_thread()
-
-    # Give the thread a moment to get initial readings
-    time.sleep(2)
 
     logger.info("Sensor thread started successfully")
 except Exception as e:

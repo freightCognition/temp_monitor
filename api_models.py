@@ -99,8 +99,9 @@ webhook_config_response = webhooks_ns.model('WebhookConfigResponse', {
 })
 
 error_response = webhooks_ns.model('ErrorResponse', {
-    'error': fields.String(description='Error message'),
-    'details': fields.String(description='Additional error details')
+    'message': fields.String(description='Error message (validation errors, e.g. from webhooks_ns.abort)'),
+    'error': fields.String(description='Error message (unhandled server errors)'),
+    'error_id': fields.String(description='Unique error identifier for log correlation (500 errors)')
 })
 
 success_response = webhooks_ns.model('SuccessResponse', {
@@ -121,9 +122,54 @@ test_response = webhooks_ns.model('TestResponse', {
 })
 
 
+def _validate_numeric_field(container: dict, field: str, min_val, max_val,
+                             *, integer_only: bool, allow_null: bool) -> None:
+    """
+    Validate a single numeric field on a payload dict in place.
+
+    Raises ValueError with a clear message on any invalid input (wrong type,
+    disallowed null, or out-of-range). Booleans are explicitly rejected even
+    though Python considers bool a subclass of int (True/False must not be
+    accepted as 1/0). A missing key is always fine (partial update).
+    """
+    if field not in container:
+        return
+
+    value = container[field]
+
+    if value is None:
+        if allow_null:
+            return
+        raise ValueError(f'{field} cannot be null')
+
+    is_bool = isinstance(value, bool)
+    if integer_only:
+        valid_type = isinstance(value, int) and not is_bool
+    else:
+        valid_type = isinstance(value, (int, float)) and not is_bool
+
+    if not valid_type:
+        expected = 'an integer' if integer_only else 'a number'
+        raise ValueError(f'{field} must be {expected}')
+
+    if not (min_val <= value <= max_val):
+        raise ValueError(f'{field} must be between {min_val} and {max_val}')
+
+
 def validate_webhook_config(webhook: dict) -> tuple:
     """
-    Validate webhook configuration field ranges.
+    Validate webhook configuration field types and ranges.
+
+    Defensive against malformed/untrusted JSON: non-dict input, wrong field
+    types (str/float/bool/list/dict where an int is expected), explicit
+    JSON null on fields that don't support it, and out-of-range values all
+    produce a clean (False, message) result instead of a raised
+    TypeError/AttributeError.
+
+    A key that is simply absent from `webhook` is treated as "not being
+    updated" (partial update). A key present with an explicit JSON `null`
+    is treated as an invalid attempt to clear a required field for `url`,
+    `retry_count`, `retry_delay`, and `timeout`.
 
     Args:
         webhook: Dictionary with webhook config values
@@ -131,48 +177,100 @@ def validate_webhook_config(webhook: dict) -> tuple:
     Returns:
         Tuple of (is_valid: bool, error_message: str)
     """
-    # Validate URL if provided
-    if 'url' in webhook:
-        url = webhook['url']
-        if url is not None:  # Allow None/missing for partial updates with existing config
+    try:
+        if not isinstance(webhook, dict):
+            raise ValueError('webhook must be an object')
+
+        if 'url' in webhook:
+            url = webhook['url']
+            if url is None:
+                # Explicit null would silently wipe out an existing URL
+                # (or block creation of a new config) if allowed through.
+                raise ValueError('URL required: url must not be null')
             if not isinstance(url, str) or not url.strip():
-                return False, 'url must be a non-empty string'
+                raise ValueError('url must be a non-empty string')
             # Basic URL format validation
             parsed = urlparse(url)
             if not parsed.scheme or not parsed.netloc:
-                return False, 'url must be a valid URL with scheme and host'
+                raise ValueError('url must be a valid URL with scheme and host')
 
-    if 'retry_count' in webhook and webhook['retry_count'] is not None:
-        if not (1 <= webhook['retry_count'] <= 10):
-            return False, 'retry_count must be between 1 and 10'
+        if 'enabled' in webhook:
+            enabled = webhook['enabled']
+            # An explicit null here was previously accepted and stored, and
+            # because WebhookService checks `not config.enabled`, a None
+            # silently disabled ALL webhook delivery -- after a 200 OK that
+            # reported success. Same failure shape as a null url.
+            if enabled is None:
+                raise ValueError('enabled must not be null')
+            if not isinstance(enabled, bool):
+                raise ValueError('enabled must be a boolean')
 
-    if 'retry_delay' in webhook and webhook['retry_delay'] is not None:
-        if not (1 <= webhook['retry_delay'] <= 60):
-            return False, 'retry_delay must be between 1 and 60 seconds'
-
-    if 'timeout' in webhook and webhook['timeout'] is not None:
-        if not (5 <= webhook['timeout'] <= 120):
-            return False, 'timeout must be between 5 and 120 seconds'
+        _validate_numeric_field(webhook, 'retry_count', 1, 10, integer_only=True, allow_null=False)
+        _validate_numeric_field(webhook, 'retry_delay', 1, 60, integer_only=True, allow_null=False)
+        _validate_numeric_field(webhook, 'timeout', 5, 120, integer_only=True, allow_null=False)
+    except ValueError as e:
+        return False, str(e)
 
     return True, ''
 
 
-def validate_thresholds(thresholds: dict) -> tuple:
+def _get_threshold_field(source, field: str):
+    """Read a threshold field from either a dict or an object (e.g. AlertThresholds)."""
+    if source is None:
+        return None
+    if isinstance(source, dict):
+        return source.get(field)
+    return getattr(source, field, None)
+
+
+def validate_thresholds(thresholds: dict, current_thresholds=None) -> tuple:
     """
-    Validate threshold relationships (cross-field validation).
+    Validate threshold field types, absolute ranges, and cross-field
+    relationships (min < max).
+
+    Defensive against malformed/untrusted JSON: non-dict input and
+    non-numeric field values (e.g. strings) produce a clean (False,
+    message) result instead of a raised TypeError/AttributeError.
+    Documented absolute ranges (-50..100C, 0..100%) are enforced.
 
     Args:
-        thresholds: Dictionary with threshold values
+        thresholds: Dictionary with threshold values from the request payload.
+        current_thresholds: Optional currently-stored thresholds (dict or an
+            object such as AlertThresholds). When provided, the min/max
+            cross-check validates the RESULTING merged config (payload
+            values override current_thresholds values), so a partial update
+            that would put min >= max against the stored config is caught.
+            When omitted (default), behavior is unchanged from before:
+            the cross-check only fires when both keys of a pair are present
+            in the payload itself.
 
     Returns:
         Tuple of (is_valid: bool, error_message: str)
     """
-    if thresholds.get('temp_min_c') is not None and thresholds.get('temp_max_c') is not None:
-        if thresholds['temp_min_c'] >= thresholds['temp_max_c']:
-            return False, 'temp_min_c must be less than temp_max_c'
+    try:
+        if not isinstance(thresholds, dict):
+            raise ValueError('thresholds must be an object')
 
-    if thresholds.get('humidity_min') is not None and thresholds.get('humidity_max') is not None:
-        if thresholds['humidity_min'] >= thresholds['humidity_max']:
-            return False, 'humidity_min must be less than humidity_max'
+        _validate_numeric_field(thresholds, 'temp_min_c', -50, 100, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'temp_max_c', -50, 100, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'humidity_min', 0, 100, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'humidity_max', 0, 100, integer_only=False, allow_null=True)
+
+        def effective(field):
+            if field in thresholds and thresholds[field] is not None:
+                return thresholds[field]
+            return _get_threshold_field(current_thresholds, field)
+
+        temp_min = effective('temp_min_c')
+        temp_max = effective('temp_max_c')
+        if temp_min is not None and temp_max is not None and temp_min >= temp_max:
+            raise ValueError('temp_min_c must be less than temp_max_c')
+
+        humidity_min = effective('humidity_min')
+        humidity_max = effective('humidity_max')
+        if humidity_min is not None and humidity_max is not None and humidity_min >= humidity_max:
+            raise ValueError('humidity_min must be less than humidity_max')
+    except ValueError as e:
+        return False, str(e)
 
     return True, ''

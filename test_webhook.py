@@ -9,6 +9,7 @@ Uses unittest.mock to capture payloads and verify Slack message structure.
 import sys
 import unittest
 from unittest.mock import patch, MagicMock
+import requests
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds
 
 
@@ -562,7 +563,10 @@ class TestConfiguration(unittest.TestCase):
         self.assertEqual(config.timeout, 30)
 
     def test_disabled_thresholds_dont_trigger(self):
-        """Disabled thresholds (None) should not trigger alerts"""
+        """Disabled thresholds (None) should not trigger alerts, even at extreme
+        readings that WOULD trigger a low alert if the None threshold were
+        mistakenly enforced. This proves the check is truly skipped rather than
+        passing vacuously because the reading happened not to breach anything."""
         thresholds = AlertThresholds(
             temp_min_c=None,
             temp_max_c=30.0,
@@ -571,10 +575,256 @@ class TestConfiguration(unittest.TestCase):
         )
         service = WebhookService(alert_thresholds=thresholds)
 
-        alerts = service.check_and_alert(10.0, 25.0, "2025-12-30 12:00:00")
+        # Extreme low values: would trigger temp_low/humidity_low under any
+        # sane real threshold, so this only stays silent if None truly disables
+        # the check.
+        alerts = service.check_and_alert(-10.0, 1.0, "2025-12-30 12:00:00")
 
         self.assertNotIn('temp_low', alerts)
         self.assertNotIn('humidity_low', alerts)
+
+        # Sanity check: the max thresholds (which are NOT None) still function,
+        # so we know check_and_alert is actually evaluating readings and not
+        # just short-circuiting everything.
+        alerts_max = service.check_and_alert(35.0, 90.0, "2025-12-30 12:00:01")
+        self.assertIn('temp_high', alerts_max)
+        self.assertIn('humidity_high', alerts_max)
+
+
+class TestSuccessStatusCodes(unittest.TestCase):
+    """Any 2xx status code must count as a successful send (B1).
+
+    Previously only exactly 200 counted as success, so a relay/endpoint that
+    legitimately returns 201/202/204 would be treated as a failure: every
+    retry would burn, _send_webhook would return False, _mark_alert_sent
+    would never run, and the cooldown would never be recorded -- causing the
+    same alert to resend every cycle forever.
+    """
+
+    @patch('webhook_service.requests.post')
+    def test_2xx_status_codes_count_as_success_and_record_cooldown(self, mock_post):
+        for status in (200, 201, 202, 204):
+            with self.subTest(status=status):
+                mock_post.return_value = MagicMock(status_code=status, text="")
+                config = WebhookConfig(
+                    url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+                    enabled=True,
+                    retry_count=1
+                )
+                thresholds = AlertThresholds(temp_max_c=25.0)
+                service = WebhookService(
+                    webhook_config=config,
+                    alert_thresholds=thresholds,
+                    alert_cooldown=300
+                )
+
+                alerts = service.check_and_alert(30.0, 50.0, f"T-{status}")
+
+                self.assertTrue(
+                    alerts.get('temp_high'),
+                    f"status {status} should count as success"
+                )
+                # Cooldown must have been recorded on success: an immediate
+                # second check must be suppressed.
+                self.assertFalse(
+                    service._can_send_alert('temp_high'),
+                    f"status {status} success did not record cooldown"
+                )
+
+
+class TestMonotonicCooldown(unittest.TestCase):
+    """Cooldown must be immune to wall-clock steps (B3).
+
+    A Raspberry Pi has no RTC; NTP can step the wall clock backwards shortly
+    after boot. If cooldown math uses time.time(), a backwards step makes
+    `elapsed` negative and suppresses every alert type until the (now bogus)
+    cooldown window passes -- potentially forever if the clock keeps getting
+    corrected. time.monotonic() is immune to this because it never goes
+    backwards.
+    """
+
+    def setUp(self):
+        self.config = WebhookConfig(
+            url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+            enabled=False
+        )
+        self.service = WebhookService(webhook_config=self.config, alert_cooldown=60)
+
+    @patch('webhook_service.time.time')
+    @patch('webhook_service.time.monotonic')
+    def test_wall_clock_backwards_step_does_not_suppress_alerts(self, mock_monotonic, mock_time):
+        # monotonic time advances normally by 70s (past the 60s cooldown)
+        mock_monotonic.side_effect = [1000.0, 1070.0]
+        # wall clock jumps backwards by 900s, as an NTP step at boot would do
+        mock_time.side_effect = [1000.0, 100.0]
+
+        self.service._mark_alert_sent('test_alert')
+        can_send = self.service._can_send_alert('test_alert')
+
+        self.assertTrue(
+            can_send,
+            "cooldown must use a monotonic clock, immune to backwards wall-clock steps"
+        )
+        mock_time.assert_not_called()
+
+
+class TestAlertRecovery(unittest.TestCase):
+    """Cooldown must clear on recovery, with a resolved notification sent (B4).
+
+    Without this, a spike at T=0 sends an alert; recovery at T=1min is
+    silent; a second spike at T=3min is suppressed by the still-active
+    cooldown from the FIRST spike -- total silence until the cooldown
+    window expires, even though the room re-entered an alert state.
+    """
+
+    def setUp(self):
+        self.config = WebhookConfig(
+            url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+            enabled=True,
+            retry_count=1
+        )
+        self.thresholds = AlertThresholds(temp_max_c=25.0)
+
+    @patch('webhook_service.requests.post')
+    def test_recovery_clears_cooldown_and_sends_resolved_notification(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="")
+        service = WebhookService(
+            webhook_config=self.config,
+            alert_thresholds=self.thresholds,
+            alert_cooldown=300
+        )
+
+        # Spike: alert fires
+        spike = service.check_and_alert(30.0, 50.0, "T0")
+        self.assertTrue(spike.get('temp_high'))
+        self.assertEqual(mock_post.call_count, 1)
+
+        # Recovery: reading back within threshold -> resolved notification,
+        # cooldown cleared
+        recovered = service.check_and_alert(20.0, 50.0, "T1")
+        self.assertTrue(recovered.get('temp_high_resolved'))
+        self.assertEqual(mock_post.call_count, 2)
+
+        # Second spike immediately after recovery must NOT be suppressed by
+        # the stale cooldown from the first spike.
+        respike = service.check_and_alert(31.0, 50.0, "T2")
+        self.assertTrue(respike.get('temp_high'))
+        self.assertEqual(mock_post.call_count, 3)
+
+    @patch('webhook_service.requests.post')
+    def test_no_resolved_notification_when_never_alerted(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="")
+        service = WebhookService(
+            webhook_config=self.config,
+            alert_thresholds=self.thresholds,
+            alert_cooldown=300
+        )
+
+        # Normal reading, never alerted -> no resolved notification either
+        normal = service.check_and_alert(20.0, 50.0, "T0")
+        self.assertNotIn('temp_high_resolved', normal)
+        mock_post.assert_not_called()
+
+
+class TestCooldownEndToEnd(unittest.TestCase):
+    """Drive check_and_alert TWICE with a mocked transport and enabled=True,
+    asserting the second call is suppressed by cooldown (B5)."""
+
+    @patch('webhook_service.requests.post')
+    def test_second_identical_alert_is_suppressed(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="")
+        config = WebhookConfig(
+            url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+            enabled=True,
+            retry_count=1
+        )
+        thresholds = AlertThresholds(temp_max_c=25.0)
+        service = WebhookService(
+            webhook_config=config,
+            alert_thresholds=thresholds,
+            alert_cooldown=300
+        )
+
+        first = service.check_and_alert(30.0, 50.0, "T0")
+        self.assertTrue(first.get('temp_high'))
+        self.assertEqual(mock_post.call_count, 1)
+
+        second = service.check_and_alert(30.0, 50.0, "T1")
+        self.assertNotIn('temp_high', second)
+        self.assertEqual(mock_post.call_count, 1)
+
+
+class TestSecretScrubbing(unittest.TestCase):
+    """Webhook secrets must never leak into logs (B7).
+
+    response.text was logged unbounded, and RequestException messages embed
+    the full URL including the secret Slack path
+    (".../services/T.../B.../<secret>"), defeating the _mask_url design used
+    everywhere else.
+    """
+
+    @patch('webhook_service.requests.post')
+    def test_request_exception_does_not_leak_secret_path(self, mock_post):
+        secret_url = "https://hooks.slack.com/services/TSECRET/BSECRET/supersecrettoken"
+        mock_post.side_effect = requests.exceptions.ConnectionError(
+            "HTTPSConnectionPool(host='hooks.slack.com', port=443): "
+            "Max retries exceeded with url: /services/TSECRET/BSECRET/supersecrettoken "
+            "(Caused by NewConnectionError('...'))"
+        )
+        config = WebhookConfig(url=secret_url, enabled=True, retry_count=1)
+        service = WebhookService(webhook_config=config)
+
+        with self.assertLogs(level='ERROR') as cm:
+            result = service._send_webhook({"test": "payload"})
+
+        self.assertFalse(result)
+        log_output = "\n".join(cm.output)
+        self.assertNotIn("TSECRET", log_output)
+        self.assertNotIn("BSECRET", log_output)
+        self.assertNotIn("supersecrettoken", log_output)
+
+    @patch('webhook_service.requests.post')
+    def test_response_body_is_truncated_in_logs(self, mock_post):
+        long_body = "SECRETVALUE" + ("x" * 5000)
+        mock_post.return_value = MagicMock(status_code=500, text=long_body)
+        config = WebhookConfig(
+            url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+            enabled=True,
+            retry_count=1
+        )
+        service = WebhookService(webhook_config=config)
+
+        with self.assertLogs(level='WARNING') as cm:
+            service._send_webhook({"test": "payload"})
+
+        log_output = "\n".join(cm.output)
+        self.assertLess(len(log_output), len(long_body))
+
+
+class TestSlackPayloadSchema(unittest.TestCase):
+    """Slack attachment payload must include fallback + mrkdwn_in (B8).
+
+    Without `fallback`, Slack's legacy attachment schema renders an empty
+    push notification -- exactly what on-call sees first.
+    """
+
+    @patch.object(WebhookService, '_send_webhook')
+    def test_payload_includes_fallback_and_mrkdwn_in(self, mock_send):
+        mock_send.return_value = True
+        config = WebhookConfig(
+            url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+            enabled=True
+        )
+        service = WebhookService(webhook_config=config)
+
+        service.send_slack_message(text="Test message", color="danger")
+
+        payload = mock_send.call_args[0][0]
+        attachment = payload["attachments"][0]
+
+        self.assertEqual(attachment["fallback"], "Test message")
+        self.assertIn("mrkdwn_in", attachment)
+        self.assertIn("text", attachment["mrkdwn_in"])
 
 
 def main():

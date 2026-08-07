@@ -8,8 +8,12 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./static:/app/static:ro
-      - ./.env:/app/.env
       - /sys:/sys:ro
+    # env_file fails loudly at `docker compose up` if .env is missing, unlike a
+    # bind-mount volume for a single file, which silently creates an empty
+    # directory at that path when the source doesn't exist on the host.
+    env_file:
+      - .env
     devices:
       - /dev/i2c-1:/dev/i2c-1
     restart: unless-stopped
