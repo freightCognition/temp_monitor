@@ -26,6 +26,76 @@ except ImportError:
 # Load environment variables from .env file
 load_dotenv()
 
+
+# --- Environment variable parsing --------------------------------------------
+#
+# Every env var in this module is read through one of these two helpers so
+# that a malformed value fails with a message naming the variable, instead of
+# either killing the WSGI worker with a bare traceback or -- worse -- being
+# silently coerced to a wrong-but-plausible default.
+
+def _parse_env_number(var_name, default, cast):
+    """Parse a numeric environment variable, raising a clear RuntimeError
+    instead of letting a bare ValueError/TypeError propagate out of module
+    import (C4). An uncaught exception here kills the WSGI worker with a
+    traceback that doesn't say which variable was at fault; this makes the
+    failure diagnosable from the error message alone.
+
+    Args:
+        var_name: Name of the environment variable to read.
+        default: Fallback string used when the variable is unset.
+        cast: int or float -- the type to convert the raw value to.
+
+    Returns:
+        The parsed value (documented defaults apply when the var is unset).
+    """
+    raw = os.getenv(var_name, default)
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        raise RuntimeError(
+            f"Invalid value for environment variable {var_name}={raw!r}: "
+            f"expected a valid {cast.__name__}"
+        )
+
+
+_TRUTHY = ('1', 'true', 'yes', 'on')
+_FALSY = ('0', 'false', 'no', 'off', '')
+
+
+def _parse_env_bool(var_name, default=False):
+    """Parse a boolean environment variable.
+
+    These flags were previously parsed ad hoc, and inconsistently:
+    USE_MOCK_SENSOR accepted 1/true/yes while WEBHOOK_ENABLED and the
+    STATUS_UPDATE_* flags compared against the literal string 'true'. An
+    operator who wrote WEBHOOK_ENABLED=yes by analogy therefore silently
+    disabled webhooks. One helper means one accepted vocabulary, and an
+    unrecognized value is an error rather than a silent false.
+
+    Args:
+        var_name: Name of the environment variable to read.
+        default: Value used when the variable is unset or empty.
+
+    Returns:
+        bool
+    """
+    raw = os.getenv(var_name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized == '':
+        return default
+    if normalized in _TRUTHY:
+        return True
+    if normalized in _FALSY:
+        return False
+    raise RuntimeError(
+        f"Invalid value for environment variable {var_name}={raw!r}: "
+        f"expected one of {_TRUTHY + _FALSY[:-1]}"
+    )
+
+
 # Sensor driver selection.
 #
 # IMPORTANT: this repo previously shipped a stub named sense_hat.py in the
@@ -34,7 +104,7 @@ load_dotenv()
 # reported a frozen, fabricated 25.0C / 40.0% forever. The stub now lives
 # under mock_sense_hat.py -- a name that cannot collide with the real
 # package -- and is only loaded when USE_MOCK_SENSOR is explicitly set.
-USE_MOCK_SENSOR = os.getenv('USE_MOCK_SENSOR', '').strip().lower() in ('1', 'true', 'yes')
+USE_MOCK_SENSOR = _parse_env_bool('USE_MOCK_SENSOR', False)
 if USE_MOCK_SENSOR:
     from mock_sense_hat import SenseHat
 else:
@@ -168,33 +238,8 @@ counters_lock = threading.Lock()
 sensor_thread = None  # Will be initialized when started
 
 
-def _parse_env_number(var_name, default, cast):
-    """Parse a numeric environment variable, raising a clear RuntimeError
-    instead of letting a bare ValueError/TypeError propagate out of module
-    import (C4). An uncaught exception here kills the WSGI worker with a
-    traceback that doesn't say which variable was at fault; this makes the
-    failure diagnosable from the error message alone.
-
-    Args:
-        var_name: Name of the environment variable to read.
-        default: Fallback string used when the variable is unset.
-        cast: int or float -- the type to convert the raw value to.
-
-    Returns:
-        The parsed value (documented defaults apply when the var is unset).
-    """
-    raw = os.getenv(var_name, default)
-    try:
-        return cast(raw)
-    except (TypeError, ValueError):
-        raise RuntimeError(
-            f"Invalid value for environment variable {var_name}={raw!r}: "
-            f"expected a valid {cast.__name__}"
-        )
-
-
 # Periodic status update configuration
-status_update_enabled = os.getenv('STATUS_UPDATE_ENABLED', 'false').lower() == 'true'
+status_update_enabled = _parse_env_bool('STATUS_UPDATE_ENABLED', False)
 status_update_interval = _parse_env_number('STATUS_UPDATE_INTERVAL', '3600', int)
 last_status_update = None  # Track time of last status update
 
@@ -250,7 +295,7 @@ slack_webhook_url = os.getenv('SLACK_WEBHOOK_URL')
 if slack_webhook_url:
     webhook_config = WebhookConfig(
         url=slack_webhook_url,
-        enabled=os.getenv('WEBHOOK_ENABLED', 'true').lower() == 'true',
+        enabled=_parse_env_bool('WEBHOOK_ENABLED', True),
         retry_count=_parse_env_number('WEBHOOK_RETRY_COUNT', '3', int),
         retry_delay=_parse_env_number('WEBHOOK_RETRY_DELAY', '5', int),
         timeout=_parse_env_number('WEBHOOK_TIMEOUT', '10', int)
@@ -279,7 +324,7 @@ else:
 
 # Initialize status update timer
 if status_update_enabled and webhook_service:
-    if os.getenv('STATUS_UPDATE_ON_STARTUP', 'false').lower() == 'true':
+    if _parse_env_bool('STATUS_UPDATE_ON_STARTUP', False):
         last_status_update = None  # Will trigger immediately on first loop
         logging.info("Periodic status updates enabled (will send on startup)")
     else:
@@ -772,12 +817,21 @@ class WebhookConfigResource(Resource):
                     webhook_service = WebhookService(alert_cooldown=alert_cooldown_seconds)
 
                 existing_config = webhook_service.webhook_config if webhook_service else None
+
+                def merged_config(field, default):
+                    """Take the submitted value when the key is present (even
+                    if explicitly null), else the currently stored value, else
+                    the documented default."""
+                    if field in webhook_data:
+                        return webhook_data[field]
+                    return getattr(existing_config, field, default)
+
                 config = WebhookConfig(
-                    url=webhook_data.get('url', existing_config.url if existing_config else ''),
-                    enabled=webhook_data.get('enabled', existing_config.enabled if existing_config else True),
-                    retry_count=webhook_data.get('retry_count', existing_config.retry_count if existing_config else 3),
-                    retry_delay=webhook_data.get('retry_delay', existing_config.retry_delay if existing_config else 5),
-                    timeout=webhook_data.get('timeout', existing_config.timeout if existing_config else 10)
+                    url=merged_config('url', ''),
+                    enabled=merged_config('enabled', True),
+                    retry_count=merged_config('retry_count', 3),
+                    retry_delay=merged_config('retry_delay', 5),
+                    timeout=merged_config('timeout', 10)
                 )
                 webhook_service.set_webhook_config(config)
 
@@ -791,15 +845,17 @@ class WebhookConfigResource(Resource):
             if 'thresholds' in data and data['thresholds']:
                 threshold_data = data['thresholds']
                 existing_thresholds = webhook_service.alert_thresholds if webhook_service else None
+
+                def merged_threshold(field):
+                    if field in threshold_data:
+                        return threshold_data[field]
+                    return getattr(existing_thresholds, field, None)
+
                 thresholds = AlertThresholds(
-                    temp_min_c=threshold_data.get(
-                        'temp_min_c', existing_thresholds.temp_min_c if existing_thresholds else None),
-                    temp_max_c=threshold_data.get(
-                        'temp_max_c', existing_thresholds.temp_max_c if existing_thresholds else None),
-                    humidity_min=threshold_data.get(
-                        'humidity_min', existing_thresholds.humidity_min if existing_thresholds else None),
-                    humidity_max=threshold_data.get(
-                        'humidity_max', existing_thresholds.humidity_max if existing_thresholds else None)
+                    temp_min_c=merged_threshold('temp_min_c'),
+                    temp_max_c=merged_threshold('temp_max_c'),
+                    humidity_min=merged_threshold('humidity_min'),
+                    humidity_max=merged_threshold('humidity_max')
                 )
 
                 if not webhook_service:

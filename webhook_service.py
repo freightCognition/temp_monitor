@@ -227,6 +227,29 @@ class WebhookService:
         with self._lock:
             self.active_alerts.add(alert_type)
 
+    # Recovery notification text, keyed by the same alert_type strings used
+    # by _can_send_alert / _mark_alert_sent / _mark_alert_active. Keeping the
+    # text in one table means a call site only has to name the alert type
+    # correctly, not also restate its message.
+    _RESOLVED_MESSAGES = {
+        'temp_high': "✅ *Temperature Alert Resolved: HIGH*",
+        'temp_low': "✅ *Temperature Alert Resolved: LOW*",
+        'humidity_high': "✅ *Humidity Alert Resolved: HIGH*",
+        'humidity_low': "✅ *Humidity Alert Resolved: LOW*",
+    }
+
+    def _record_recovery(self, alerts_sent: Dict[str, bool], alert_type: str,
+                         timestamp: str):
+        """Run recovery for alert_type and record the outcome in alerts_sent.
+
+        No key is added when the alert type was not active, so a reading that
+        was never in an alerting state produces no "<type>_resolved" entry.
+        """
+        resolved = self._handle_recovery(
+            alert_type, self._RESOLVED_MESSAGES[alert_type], timestamp)
+        if resolved is not None:
+            alerts_sent[f'{alert_type}_resolved'] = resolved
+
     def _handle_recovery(self, alert_type: str, resolved_text: str,
                         timestamp: str) -> Optional[bool]:
         """
@@ -326,10 +349,7 @@ class WebhookService:
                     self._mark_alert_active('temp_high')
                 alerts_sent['temp_high'] = success
         else:
-            resolved = self._handle_recovery(
-                'temp_high', "✅ *Temperature Alert Resolved: HIGH*", timestamp)
-            if resolved is not None:
-                alerts_sent['temp_high_resolved'] = resolved
+            self._record_recovery(alerts_sent, 'temp_high', timestamp)
 
         # Check temperature low
         if (thresholds.temp_min_c is not None and
@@ -366,10 +386,7 @@ class WebhookService:
                     self._mark_alert_active('temp_low')
                 alerts_sent['temp_low'] = success
         else:
-            resolved = self._handle_recovery(
-                'temp_low', "✅ *Temperature Alert Resolved: LOW*", timestamp)
-            if resolved is not None:
-                alerts_sent['temp_low_resolved'] = resolved
+            self._record_recovery(alerts_sent, 'temp_low', timestamp)
 
         # Check humidity high
         if (thresholds.humidity_max is not None and
@@ -403,10 +420,7 @@ class WebhookService:
                     self._mark_alert_active('humidity_high')
                 alerts_sent['humidity_high'] = success
         else:
-            resolved = self._handle_recovery(
-                'humidity_high', "✅ *Humidity Alert Resolved: HIGH*", timestamp)
-            if resolved is not None:
-                alerts_sent['humidity_high_resolved'] = resolved
+            self._record_recovery(alerts_sent, 'humidity_high', timestamp)
 
         # Check humidity low
         if (thresholds.humidity_min is not None and
@@ -440,10 +454,7 @@ class WebhookService:
                     self._mark_alert_active('humidity_low')
                 alerts_sent['humidity_low'] = success
         else:
-            resolved = self._handle_recovery(
-                'humidity_low', "✅ *Humidity Alert Resolved: LOW*", timestamp)
-            if resolved is not None:
-                alerts_sent['humidity_low_resolved'] = resolved
+            self._record_recovery(alerts_sent, 'humidity_low', timestamp)
 
         return alerts_sent
 

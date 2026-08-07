@@ -8,32 +8,21 @@ New file, owned by this agent -- does not modify any existing test file.
 """
 
 import json
-import os
-import subprocess
-import sys
 import unittest
-from unittest.mock import MagicMock
+import unittest.mock
 
-if not os.environ.get('BEARER_TOKEN'):
-    os.environ['BEARER_TOKEN'] = 'test_token_config_endpoint'
-
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase, run_fresh_import
 
 import temp_monitor  # noqa: E402
 from webhook_service import WebhookService, WebhookConfig, AlertThresholds  # noqa: E402
 
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-class ConfigEndpointTestCase(unittest.TestCase):
+class ConfigEndpointTestCase(BaseAPITestCase):
     """Common setup shared by all endpoint tests below."""
 
     def setUp(self):
-        self.app = temp_monitor.app
-        self.app.config['TESTING'] = True
-        self.client = self.app.test_client()
-        self.token = os.environ['BEARER_TOKEN']
-        self.auth_header = {'Authorization': f'Bearer {self.token}'}
+        super().setUp()
         self._orig_webhook_service = temp_monitor.webhook_service
 
     def tearDown(self):
@@ -144,39 +133,21 @@ class TestC4EnvDefaultsApply(unittest.TestCase):
     at import with a clear message instead of a bare traceback."""
 
     def _import_fresh(self, env_overrides, expect_success=True):
-        script = (
-            "import sys, os, json\n"
-            "from unittest.mock import MagicMock\n"
-            "sys.modules['sense_hat'] = MagicMock()\n"
-            "import temp_monitor as tm\n"
-            "print(json.dumps({\n"
-            "    'has_webhook_service': tm.webhook_service is not None,\n"
-            "    'temp_min_c': tm.webhook_service.alert_thresholds.temp_min_c if tm.webhook_service else None,\n"
-            "    'temp_max_c': tm.webhook_service.alert_thresholds.temp_max_c if tm.webhook_service else None,\n"
-            "    'humidity_min': tm.webhook_service.alert_thresholds.humidity_min if tm.webhook_service else None,\n"
-            "    'humidity_max': tm.webhook_service.alert_thresholds.humidity_max if tm.webhook_service else None,\n"
-            "}))\n"
+        return run_fresh_import(
+            probe=(
+                "{"
+                "'has_webhook_service': tm.webhook_service is not None,"
+                "'temp_min_c': tm.webhook_service.alert_thresholds.temp_min_c if tm.webhook_service else None,"
+                "'temp_max_c': tm.webhook_service.alert_thresholds.temp_max_c if tm.webhook_service else None,"
+                "'humidity_min': tm.webhook_service.alert_thresholds.humidity_min if tm.webhook_service else None,"
+                "'humidity_max': tm.webhook_service.alert_thresholds.humidity_max if tm.webhook_service else None,"
+                "}"
+            ),
+            env_overrides=env_overrides,
+            scrub=('ALERT_TEMP_MIN_C', 'ALERT_TEMP_MAX_C', 'ALERT_HUMIDITY_MIN',
+                   'ALERT_HUMIDITY_MAX', 'SLACK_WEBHOOK_URL', 'STATUS_UPDATE_INTERVAL'),
+            expect_success=expect_success,
         )
-        env = os.environ.copy()
-        for key in ('ALERT_TEMP_MIN_C', 'ALERT_TEMP_MAX_C', 'ALERT_HUMIDITY_MIN',
-                    'ALERT_HUMIDITY_MAX', 'SLACK_WEBHOOK_URL', 'STATUS_UPDATE_INTERVAL'):
-            env.pop(key, None)
-        env.update({k: str(v) for k, v in env_overrides.items()})
-        if not env.get('BEARER_TOKEN'):
-            env['BEARER_TOKEN'] = 'test_token_config_endpoint'
-
-        result = subprocess.run(
-            [sys.executable, '-c', script],
-            cwd=REPO_DIR, env=env, capture_output=True, text=True, timeout=30,
-        )
-        if expect_success:
-            if result.returncode != 0:
-                raise AssertionError(
-                    f"Fresh import failed (env={env_overrides}):\n"
-                    f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-                )
-            return json.loads(result.stdout.strip().splitlines()[-1])
-        return result
 
     def test_unset_threshold_envs_use_documented_defaults(self):
         state = self._import_fresh({
@@ -235,36 +206,26 @@ class TestC8RecreatedServicePreservesCooldown(ConfigEndpointTestCase):
     hardcoded 900s default."""
 
     def test_cooldown_env_var_applies_when_service_created_via_api(self):
-        script = (
-            "import sys, os, json\n"
-            "from unittest.mock import MagicMock\n"
-            "sys.modules['sense_hat'] = MagicMock()\n"
-            "import temp_monitor as tm\n"
-            "client = tm.app.test_client()\n"
-            "token = os.environ['BEARER_TOKEN']\n"
-            "resp = client.put(\n"
-            "    '/api/webhook/config',\n"
-            "    data=json.dumps({'webhook': {'url': 'https://hooks.slack.com/services/T00/B00/XXX'}}),\n"
-            "    content_type='application/json',\n"
-            "    headers={'Authorization': f'Bearer {token}'},\n"
-            ")\n"
-            "print(json.dumps({\n"
-            "    'status': resp.status_code,\n"
-            "    'cooldown': tm.webhook_service.alert_cooldown if tm.webhook_service else None,\n"
-            "}))\n"
+        state = run_fresh_import(
+            probe=(
+                "{"
+                "'status': resp.status_code,"
+                "'cooldown': tm.webhook_service.alert_cooldown if tm.webhook_service else None,"
+                "}"
+            ),
+            body=(
+                "client = tm.app.test_client()\n"
+                "token = os.environ['BEARER_TOKEN']\n"
+                "resp = client.put(\n"
+                "    '/api/webhook/config',\n"
+                "    data=json.dumps({'webhook': {'url': 'https://hooks.slack.com/services/T00/B00/XXX'}}),\n"
+                "    content_type='application/json',\n"
+                "    headers={'Authorization': f'Bearer {token}'},\n"
+                ")\n"
+            ),
+            env_overrides={'ALERT_COOLDOWN_SECONDS': '120'},
+            scrub=('SLACK_WEBHOOK_URL',),
         )
-        env = os.environ.copy()
-        env.pop('SLACK_WEBHOOK_URL', None)
-        env['ALERT_COOLDOWN_SECONDS'] = '120'
-        if not env.get('BEARER_TOKEN'):
-            env['BEARER_TOKEN'] = 'test_token_config_endpoint'
-
-        result = subprocess.run(
-            [sys.executable, '-c', script],
-            cwd=REPO_DIR, env=env, capture_output=True, text=True, timeout=30,
-        )
-        self.assertEqual(result.returncode, 0, f"stdout={result.stdout}\nstderr={result.stderr}")
-        state = json.loads(result.stdout.strip().splitlines()[-1])
         self.assertEqual(state['status'], 200)
         self.assertEqual(
             state['cooldown'], 120,

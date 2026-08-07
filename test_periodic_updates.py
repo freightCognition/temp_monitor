@@ -21,29 +21,14 @@ today against the real bug and will start passing once temp_monitor.py is fixed.
 """
 
 import json
-import os
-import subprocess
-import sys
-import textwrap
 import time
 import unittest
 from unittest.mock import MagicMock
 
-# BEARER_TOKEN must be set before importing temp_monitor: temp_monitor.py:169-175
-# calls sys.exit(1) if it is missing. Set it here so this file is self-sufficient
-# and doesn't depend on the caller's environment (see test_webhook_api.py:33 for
-# the unreachable fallback this avoids). Note this repo's own .env ships
-# `BEARER_TOKEN=` (present but empty), so os.environ.setdefault() alone would NOT
-# be enough - the key already exists, just with a falsy value.
-if not os.environ.get('BEARER_TOKEN'):
-    os.environ['BEARER_TOKEN'] = 'test_token_periodic_updates'
-
-# Mock sense_hat before importing temp_monitor (no Sense HAT hardware in CI).
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import auth_header, run_fresh_import
 
 import temp_monitor  # noqa: E402
-
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class _StopLoop(BaseException):
@@ -96,48 +81,24 @@ def _run_one_iteration(module, mock_time_value):
 def _import_temp_monitor_fresh(env_overrides):
     """Import temp_monitor in a brand-new subprocess with the given environment
     variables, and return the resulting module-level state as a dict.
-
-    This tests the REAL module-level initialization code (temp_monitor.py:106-157)
-    against a genuinely clean import, without the complications of reloading the
-    shared Flask/flask-restx app objects in-process.
     """
-    script = textwrap.dedent("""
-        import sys, os, json
-        from unittest.mock import MagicMock
-        sys.modules['sense_hat'] = MagicMock()
-        import temp_monitor as tm
-        print(json.dumps({
-            'status_update_enabled': tm.status_update_enabled,
-            'status_update_interval': tm.status_update_interval,
-            'last_status_update': tm.last_status_update,
-            'webhook_service_is_none': tm.webhook_service is None,
-            'sampling_interval': tm.sampling_interval,
-        }))
-    """)
-
-    env = os.environ.copy()
-    # Start from a clean slate for the variables this suite controls, then
-    # layer the case's overrides on top, so leftover values from the parent
-    # process/shell can't leak into a "should be unset" case.
-    for key in ('STATUS_UPDATE_ENABLED', 'STATUS_UPDATE_INTERVAL',
-                'STATUS_UPDATE_ON_STARTUP', 'SLACK_WEBHOOK_URL'):
-        env.pop(key, None)
-    env.update({k: str(v) for k, v in env_overrides.items()})
-    if not env.get('BEARER_TOKEN'):
-        env['BEARER_TOKEN'] = 'test_token_periodic_updates'
-
-    result = subprocess.run(
-        [sys.executable, '-c', script],
-        cwd=REPO_DIR, env=env, capture_output=True, text=True, timeout=30,
+    return run_fresh_import(
+        probe=(
+            "{"
+            "'status_update_enabled': tm.status_update_enabled,"
+            "'status_update_interval': tm.status_update_interval,"
+            "'last_status_update': tm.last_status_update,"
+            "'webhook_service_is_none': tm.webhook_service is None,"
+            "'sampling_interval': tm.sampling_interval,"
+            "}"
+        ),
+        env_overrides=env_overrides,
+        # Start from a clean slate for the variables this suite controls, so
+        # leftover values from the parent process/shell can't leak into a
+        # "should be unset" case.
+        scrub=('STATUS_UPDATE_ENABLED', 'STATUS_UPDATE_INTERVAL',
+               'STATUS_UPDATE_ON_STARTUP', 'SLACK_WEBHOOK_URL'),
     )
-    if result.returncode != 0:
-        raise AssertionError(
-            f"Fresh import of temp_monitor failed (env={env_overrides}):\n"
-            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-        )
-    # temp_monitor.py logs an "Sense HAT" line etc. to stdout in some paths; the
-    # JSON we printed is always the last line.
-    return json.loads(result.stdout.strip().splitlines()[-1])
 
 
 class TestMinimumIntervalClamp(unittest.TestCase):
@@ -296,12 +257,11 @@ class TestPeriodicUpdateLoopBody(unittest.TestCase):
         temp_monitor.last_status_update = None  # as left by temp_monitor.py:156-157
 
         client = temp_monitor.app.test_client()
-        token = os.environ['BEARER_TOKEN']
         response = client.put(
             '/api/webhook/config',
             data=json.dumps({'webhook': {'url': 'https://hooks.slack.com/services/T00/B00/XXX'}}),
             content_type='application/json',
-            headers={'Authorization': f'Bearer {token}'},
+            headers=auth_header(),
         )
         self.assertEqual(response.status_code, 200)
         self.assertIsNotNone(temp_monitor.webhook_service)

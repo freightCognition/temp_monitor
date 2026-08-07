@@ -17,9 +17,8 @@ import sys
 import unittest
 from logging.handlers import RotatingFileHandler
 
-from unittest.mock import MagicMock
-
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+import test_support  # noqa: F401
 
 import temp_monitor  # noqa: E402
 

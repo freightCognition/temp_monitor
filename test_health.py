@@ -15,13 +15,11 @@ and the service is reachable over a public tunnel. Fix: keep /health
 unauthenticated but strip it to liveness only (no sensor values, no
 process internals); require the bearer token on /metrics.
 """
-import os
-import sys
 import time
 import unittest
-from unittest.mock import MagicMock
 
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase
 
 import temp_monitor  # noqa: E402
 
@@ -34,13 +32,9 @@ class _FakeThread:
         return self._alive
 
 
-class HealthTestBase(unittest.TestCase):
+class HealthTestBase(BaseAPITestCase):
     def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
-        token = os.getenv('BEARER_TOKEN', 'test_token_ci')
-        self.auth_header = {'Authorization': f'Bearer {token}'}
-
+        super().setUp()
         self._orig_thread = temp_monitor.sensor_thread
         self._orig_last_updated_ts = temp_monitor.last_updated_ts
         self._orig_compensated = temp_monitor.current_temp_compensated

@@ -61,6 +61,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Configuration
 
 Environment variables (from `.env`):
+
+All boolean variables below (`WEBHOOK_ENABLED`, `STATUS_UPDATE_ENABLED`,
+`STATUS_UPDATE_ON_STARTUP`, `USE_MOCK_SENSOR`) are parsed by one helper,
+`_parse_env_bool`, and accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`
+(case-insensitive). An unset or empty value uses the documented default; any
+other value raises at startup naming the offending variable, rather than being
+silently treated as false.
+
 - `LOG_FILE` - Path to log file (default: `temp_monitor.log`)
 - `BEARER_TOKEN` - Required for API access (generated with `python3 -c "import secrets; print(secrets.token_hex(32))"`)
 - `SLACK_WEBHOOK_URL` - Slack webhook URL (enables webhook service)

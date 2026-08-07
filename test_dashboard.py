@@ -27,20 +27,18 @@ TestNoDocumentedRouteReturns404 below exists to catch automatically next
 time.
 """
 import json
-import os
-import sys
 import unittest
 from unittest.mock import MagicMock
 
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase
 
 import temp_monitor  # noqa: E402
 
 
-class TestDashboardRoute(unittest.TestCase):
+class TestDashboardRoute(BaseAPITestCase):
     def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
+        super().setUp()
         self._orig_temp = temp_monitor.current_temp
         self._orig_humidity = temp_monitor.current_humidity
 
@@ -108,7 +106,7 @@ class TestRootRouteRegistrationIsOrderIndependent(unittest.TestCase):
         self.assertEqual(response.get_data(as_text=True), 'dashboard')
 
 
-class TestNoDocumentedRouteReturns404(unittest.TestCase):
+class TestNoDocumentedRouteReturns404(BaseAPITestCase):
     """Mandatory regression guard (see module docstring): a routing/
     registration change must never again silently 404 a documented route
     without a test catching it immediately. This is what would have caught
@@ -135,10 +133,7 @@ class TestNoDocumentedRouteReturns404(unittest.TestCase):
     ]
 
     def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
-        token = os.getenv('BEARER_TOKEN', 'test_token_ci')
-        self.auth_header = {'Authorization': f'Bearer {token}'}
+        super().setUp()
         # /api/raw calls sense.get_temperature() directly; give it a real
         # float so this doesn't 500 for reasons unrelated to routing.
         self._orig_get_temperature = temp_monitor.sense.get_temperature

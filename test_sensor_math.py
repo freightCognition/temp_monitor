@@ -21,12 +21,11 @@ Covers:
   change, that means the blending behavior changed -- flag it loudly, the
   user is actively calibrating against a real thermostat.
 """
-import os
-import sys
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase
 
 import temp_monitor  # noqa: E402
 
@@ -210,16 +209,13 @@ class TestGetHumidity(unittest.TestCase):
         self.assertEqual(temp_monitor.get_humidity(), 100.0)
 
 
-class TestApiTempExposesCompensatedFlag(unittest.TestCase):
+class TestApiTempExposesCompensatedFlag(BaseAPITestCase):
     """S4: assert /api/temp (and /api/raw) carry the uncompensated flag
     when CPU compensation could not be applied, so clients don't mistake a
     degraded reading for a normal one."""
 
     def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
-        token = os.getenv('BEARER_TOKEN', 'test_token_ci')
-        self.auth_header = {'Authorization': f'Bearer {token}'}
+        super().setUp()
         self._orig_temp = temp_monitor.current_temp
         self._orig_compensated = temp_monitor.current_temp_compensated
         self._orig_humidity = temp_monitor.current_humidity

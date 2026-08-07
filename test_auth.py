@@ -28,22 +28,16 @@ through the decorator stack untouched, and use a Flask-level
 @app.errorhandler(401) to format the JSON body instead.
 """
 import json
-import os
-import sys
 import unittest
 from unittest.mock import MagicMock
 
-sys.modules['sense_hat'] = MagicMock()
+# Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
+from test_support import BaseAPITestCase
 
 import temp_monitor  # noqa: E402
 
 
-class TestRequireTokenAuth(unittest.TestCase):
-    def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
-        self.token = os.getenv('BEARER_TOKEN', 'test_token_ci')
-
+class TestRequireTokenAuth(BaseAPITestCase):
     def test_trailing_garbage_after_token_is_rejected(self):
         """S8(b): 'Bearer <token> junkjunk' must NOT authenticate."""
         response = self.client.get(
@@ -115,7 +109,7 @@ class TestRequireTokenAuth(unittest.TestCase):
         self.assertIn('abort(401', source)
 
 
-class TestAuthMatrixAcrossAllProtectedEndpoints(unittest.TestCase):
+class TestAuthMatrixAcrossAllProtectedEndpoints(BaseAPITestCase):
     """Mandatory regression test, added after an auth-bypass near-miss
     (see module docstring): require_token() briefly RETURNED its 401
     response instead of raising, which flask_restx's @marshal_with()
@@ -146,9 +140,7 @@ class TestAuthMatrixAcrossAllProtectedEndpoints(unittest.TestCase):
     ]
 
     def setUp(self):
-        temp_monitor.app.config['TESTING'] = True
-        self.client = temp_monitor.app.test_client()
-        self.token = os.getenv('BEARER_TOKEN', 'test_token_ci')
+        super().setUp()
         # /api/raw calls sense.get_temperature() directly; give it a real
         # float so a valid-token request doesn't 500 for unrelated reasons.
         self._orig_get_temperature = temp_monitor.sense.get_temperature
