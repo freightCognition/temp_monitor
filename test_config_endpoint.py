@@ -200,6 +200,100 @@ class TestC5ErrorResponsesReachClientIntact(ConfigEndpointTestCase):
         )
 
 
+class TestFix3NullBodyReturns400(ConfigEndpointTestCase):
+    """Fix 3: a literal JSON `null` body is valid JSON, so it passes
+    flask-restx's payload parsing and reaches the handler as data=None.
+    `'webhook' in data` then raised TypeError: argument of type 'NoneType'
+    is not a container -- and that check runs BEFORE the handler's own try
+    block, so the TypeError escaped as an unhandled 500 instead of a clean
+    400."""
+
+    def test_null_body_returns_400_not_500(self):
+        response = self.client.put(
+            '/api/webhook/config',
+            data='null',
+            content_type='application/json',
+            headers=self.auth_header,
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_object_body_returns_400(self):
+        """Same defect class: a JSON array/string/number body also isn't a
+        dict and must not reach `'webhook' in data`."""
+        response = self.client.put(
+            '/api/webhook/config',
+            data='[1, 2, 3]',
+            content_type='application/json',
+            headers=self.auth_header,
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class TestFix6EmptyThresholdEnvImportsCleanly(unittest.TestCase):
+    """Fix 6 / Fix 1 interaction: a set-but-empty ALERT_TEMP_MIN_C must
+    import cleanly and yield the documented default (15.0) rather than
+    crashing at import (Fix 1), and must not trip the new __post_init__
+    range validation on AlertThresholds (Fix 6) since the default is a
+    valid value."""
+
+    def test_empty_alert_temp_min_c_imports_cleanly_and_yields_default(self):
+        state = run_fresh_import(
+            probe=(
+                "{'temp_min_c': tm.webhook_service.alert_thresholds.temp_min_c "
+                "if tm.webhook_service else None}"
+            ),
+            env_overrides={
+                'SLACK_WEBHOOK_URL': 'https://hooks.slack.com/services/T00/B00/XXX',
+                'ALERT_TEMP_MIN_C': '',
+            },
+            scrub=('ALERT_TEMP_MIN_C', 'SLACK_WEBHOOK_URL'),
+        )
+        self.assertEqual(state['temp_min_c'], 15.0)
+
+
+class TestFix6InvalidRangeEnvConfigFailsLoudlyAtImport(unittest.TestCase):
+    """Fix 6: env-derived WebhookConfig/AlertThresholds skipped RANGE
+    validation entirely (only _parse_env_number's TYPE check applied), so
+    WEBHOOK_RETRY_COUNT=0 (webhook loop never runs) or an inverted
+    ALERT_TEMP_MIN_C > ALERT_TEMP_MAX_C used to boot cleanly with no
+    warning. With webhook_service.WebhookConfig/AlertThresholds
+    __post_init__ validation (ConfigValidationError) now wired to a
+    try/except at module init, these must instead fail the import loudly
+    with a RuntimeError naming the offending env var(s).
+    """
+
+    def test_inverted_temp_thresholds_raise_at_import(self):
+        result = run_fresh_import(
+            probe="{}",
+            env_overrides={
+                'SLACK_WEBHOOK_URL': 'https://hooks.slack.com/services/T00/B00/XXX',
+                'ALERT_TEMP_MIN_C': '40',
+                'ALERT_TEMP_MAX_C': '10',
+            },
+            scrub=('ALERT_TEMP_MIN_C', 'ALERT_TEMP_MAX_C', 'SLACK_WEBHOOK_URL'),
+            expect_success=False,
+        )
+        self.assertNotEqual(result.returncode, 0, "import should fail, not silently continue")
+        self.assertIn('ALERT_TEMP_MIN_C', result.stderr, "message should name the offending env var")
+        self.assertIn(
+            'temp_min_c must be less than temp_max_c', result.stderr,
+            "underlying validation reason should reach the operator",
+        )
+
+    def test_zero_retry_count_raises_at_import(self):
+        result = run_fresh_import(
+            probe="{}",
+            env_overrides={
+                'SLACK_WEBHOOK_URL': 'https://hooks.slack.com/services/T00/B00/XXX',
+                'WEBHOOK_RETRY_COUNT': '0',
+            },
+            scrub=('WEBHOOK_RETRY_COUNT', 'SLACK_WEBHOOK_URL'),
+            expect_success=False,
+        )
+        self.assertNotEqual(result.returncode, 0, "import should fail, not silently continue")
+        self.assertIn('WEBHOOK_RETRY_COUNT', result.stderr, "message should name the offending env var")
+
+
 class TestC8RecreatedServicePreservesCooldown(ConfigEndpointTestCase):
     """C8: creating a webhook service for the first time via the API must use
     the configured ALERT_COOLDOWN_SECONDS, not silently fall back to the

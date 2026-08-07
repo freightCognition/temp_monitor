@@ -431,6 +431,63 @@ class TestThresholdCrossFieldWithCurrent(unittest.TestCase):
         self.assertFalse(is_valid)
         self.assertIn('humidity_min', error)
 
+    def test_explicit_null_to_clear_agrees_with_merge(self):
+        """Fix 8, exact scenario from the bug report: stored temp_min_c=15,
+        temp_max_c=32; payload clears max (null) while raising min to 20.
+        The merge produces temp_max_c=None, so no cross-check should fire
+        -- this must be VALID.
+
+        Note: for these particular numbers the old buggy `effective()`
+        also happens to return valid here (20 still compares below the
+        stale fallback max of 32), so this case alone would not have
+        caught the bug -- see
+        test_explicit_null_to_clear_would_have_failed_before_fix below for
+        the case that actually distinguishes buggy from fixed behavior.
+        Kept here because it's the literal reported scenario.
+        """
+        current = {'temp_min_c': 15.0, 'temp_max_c': 32.0}
+        payload = {'temp_max_c': None, 'temp_min_c': 20}
+        is_valid, error = validate_thresholds(payload, current_thresholds=current)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_explicit_null_to_clear_would_have_failed_before_fix(self):
+        """Fix 8 regression: temp_monitor.py's actual merge
+        (`if field in threshold_data: return threshold_data[field]`)
+        treats a PRESENT key as authoritative even when its value is JSON
+        null -- that's how a field gets cleared. The old `effective()` here
+        instead fell back to current_thresholds whenever the payload value
+        was None, so validation disagreed with what actually gets applied.
+
+        Stored: temp_min_c=15, temp_max_c=32. Payload clears min (null)
+        while dropping max to 10 (below the stale stored min, but not
+        below the cleared/None min). The merge produces temp_min_c=None,
+        so no cross-check should fire -- this must be VALID.
+
+        Before the fix: effective('temp_min_c') fell back to the stale
+        stored 15.0 instead of None, so 15.0 >= 10 incorrectly failed
+        validation with "temp_min_c must be less than temp_max_c" -- a
+        spurious 400 naming the very field the operator just cleared.
+        """
+        current = {'temp_min_c': 15.0, 'temp_max_c': 32.0}
+        payload = {'temp_min_c': None, 'temp_max_c': 10}
+        is_valid, error = validate_thresholds(payload, current_thresholds=current)
+        self.assertTrue(is_valid)
+        self.assertEqual(error, '')
+
+    def test_explicit_null_to_clear_still_rejects_when_result_invalid(self):
+        """Sanity check for the same fix: clearing a field that is NOT
+        involved in the conflict must not mask a genuine cross-field
+        violation. Stored: temp_min_c=15, temp_max_c=32. Payload clears
+        humidity_max (unrelated) while pushing temp_min_c above the
+        stored temp_max_c -- this must still be INVALID.
+        """
+        current = {'temp_min_c': 15.0, 'temp_max_c': 32.0}
+        payload = {'humidity_max': None, 'temp_min_c': 40}
+        is_valid, error = validate_thresholds(payload, current_thresholds=current)
+        self.assertFalse(is_valid)
+        self.assertIn('temp_min_c', error)
+
 
 class TestErrorResponseModel(unittest.TestCase):
     """V7: the documented ErrorResponse model must match what the API

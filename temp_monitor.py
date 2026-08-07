@@ -10,8 +10,27 @@ import hmac
 import inspect
 import signal
 from urllib.parse import urlparse
+from werkzeug.exceptions import HTTPException
 from dotenv import load_dotenv
-from webhook_service import WebhookService, WebhookConfig, AlertThresholds
+try:
+    from webhook_service import WebhookService, WebhookConfig, AlertThresholds, ConfigValidationError
+except ImportError:
+    # TRANSITIONAL: a concurrent change is adding ConfigValidationError to
+    # webhook_service.py (raised from WebhookConfig/AlertThresholds
+    # __post_init__ range validation) and has not landed in this working
+    # tree yet. This fallback keeps temp_monitor.py importable against the
+    # pre-validation webhook_service.py so the rest of this module (and its
+    # test suite) stays runnable in the meantime -- once the real
+    # ConfigValidationError lands, this branch is simply never taken and
+    # can be deleted. Do not implement the real validation here; that
+    # belongs in webhook_service.py.
+    from webhook_service import WebhookService, WebhookConfig, AlertThresholds
+
+    class ConfigValidationError(ValueError):
+        """Placeholder matching webhook_service.ConfigValidationError's
+        contract until that class exists in this working tree. Not raised
+        by webhook_service in this state, so the except clauses guarding
+        against it below are inert (but harmless) until it lands."""
 from api_models import (
     webhooks_ns, webhook_config_update, webhook_config_response,
     error_response, success_response, message_response, test_response,
@@ -41,15 +60,29 @@ def _parse_env_number(var_name, default, cast):
     traceback that doesn't say which variable was at fault; this makes the
     failure diagnosable from the error message alone.
 
+    A SET-BUT-EMPTY value (e.g. `ALERT_TEMP_MIN_C=` in .env) used to reach
+    `os.getenv(var_name, default)` as `''` -- the default only applies when
+    the key is entirely ABSENT, not when it's present-but-blank -- and
+    `float('')` then raised, taking the whole process down at import. The
+    old `.env.example` documented that as deliberate ("set to empty to
+    disable"), but `_parse_env_bool` right below already treats empty as
+    "use the default" for boolean flags, so this now matches that behavior
+    for consistency: empty means "use the default", not "disable". There is
+    no numeric var in this codebase where "disabled" is a meaningful state
+    distinct from its default.
+
     Args:
         var_name: Name of the environment variable to read.
-        default: Fallback string used when the variable is unset.
+        default: Fallback string used when the variable is unset or empty.
         cast: int or float -- the type to convert the raw value to.
 
     Returns:
-        The parsed value (documented defaults apply when the var is unset).
+        The parsed value (documented defaults apply when the var is unset
+        or set-but-empty).
     """
-    raw = os.getenv(var_name, default)
+    raw = os.getenv(var_name)
+    if raw is None or raw.strip() == '':
+        raw = default
     try:
         return cast(raw)
     except (TypeError, ValueError):
@@ -293,25 +326,42 @@ logging.info(
 webhook_service = None
 slack_webhook_url = os.getenv('SLACK_WEBHOOK_URL')
 if slack_webhook_url:
-    webhook_config = WebhookConfig(
-        url=slack_webhook_url,
-        enabled=_parse_env_bool('WEBHOOK_ENABLED', True),
-        retry_count=_parse_env_number('WEBHOOK_RETRY_COUNT', '3', int),
-        retry_delay=_parse_env_number('WEBHOOK_RETRY_DELAY', '5', int),
-        timeout=_parse_env_number('WEBHOOK_TIMEOUT', '10', int)
-    )
+    # Fix 6: WebhookConfig/AlertThresholds validate their own field ranges
+    # in __post_init__ (raising ConfigValidationError), but that only
+    # catches TYPE errors here -- _parse_env_number checks that e.g.
+    # WEBHOOK_RETRY_COUNT is a valid int, not that it's in range. Without
+    # this try/except, WEBHOOK_RETRY_COUNT=0 (webhook loop never runs) or
+    # an inverted ALERT_TEMP_MIN_C > ALERT_TEMP_MAX_C would boot cleanly
+    # with no warning. Re-raise as RuntimeError so this fails loudly at
+    # import, the same way a malformed numeric env var already does via
+    # _parse_env_number, and so the message names the offending values.
+    try:
+        webhook_config = WebhookConfig(
+            url=slack_webhook_url,
+            enabled=_parse_env_bool('WEBHOOK_ENABLED', True),
+            retry_count=_parse_env_number('WEBHOOK_RETRY_COUNT', '3', int),
+            retry_delay=_parse_env_number('WEBHOOK_RETRY_DELAY', '5', int),
+            timeout=_parse_env_number('WEBHOOK_TIMEOUT', '10', int)
+        )
 
-    # C4: defaults documented in README (15.0/32.0/20.0/70.0) must apply
-    # whenever the corresponding var is unset -- the previous `if
-    # os.getenv(...)  else None` guard made the getenv() default dead code,
-    # so an operator setting only one ALERT_* var silently lost alerting on
-    # every other threshold.
-    alert_thresholds = AlertThresholds(
-        temp_min_c=_parse_env_number('ALERT_TEMP_MIN_C', '15.0', float),
-        temp_max_c=_parse_env_number('ALERT_TEMP_MAX_C', '32.0', float),
-        humidity_min=_parse_env_number('ALERT_HUMIDITY_MIN', '20.0', float),
-        humidity_max=_parse_env_number('ALERT_HUMIDITY_MAX', '70.0', float)
-    )
+        # C4: defaults documented in README (15.0/32.0/20.0/70.0) must apply
+        # whenever the corresponding var is unset -- the previous `if
+        # os.getenv(...)  else None` guard made the getenv() default dead code,
+        # so an operator setting only one ALERT_* var silently lost alerting on
+        # every other threshold.
+        alert_thresholds = AlertThresholds(
+            temp_min_c=_parse_env_number('ALERT_TEMP_MIN_C', '15.0', float),
+            temp_max_c=_parse_env_number('ALERT_TEMP_MAX_C', '32.0', float),
+            humidity_min=_parse_env_number('ALERT_HUMIDITY_MIN', '20.0', float),
+            humidity_max=_parse_env_number('ALERT_HUMIDITY_MAX', '70.0', float)
+        )
+    except ConfigValidationError as e:
+        raise RuntimeError(
+            "Invalid webhook/threshold environment configuration "
+            f"(WEBHOOK_RETRY_COUNT/WEBHOOK_RETRY_DELAY/WEBHOOK_TIMEOUT/"
+            f"ALERT_TEMP_MIN_C/ALERT_TEMP_MAX_C/ALERT_HUMIDITY_MIN/"
+            f"ALERT_HUMIDITY_MAX): {e}"
+        )
 
     webhook_service = WebhookService(
         webhook_config,
@@ -424,7 +474,19 @@ def require_token(f):
         # Constant-time comparison (S8a): a plain != short-circuits on the
         # first differing byte, and /api/verify-token is a free oracle to
         # exploit that against.
-        if not token or not hmac.compare_digest(token, BEARER_TOKEN):
+        #
+        # Compare as bytes, not str (Fix 7): Werkzeug decodes request headers
+        # as latin-1, so any Authorization header byte above 0x7F reaches
+        # this line as a non-ASCII str. hmac.compare_digest raises TypeError
+        # when comparing two str where either isn't ASCII-only. That
+        # TypeError was uncaught, so an UNAUTHENTICATED caller could trigger
+        # a 500 with a full stack trace on every protected endpoint just by
+        # sending a bad byte in the Authorization header. Encoding both
+        # sides to bytes first sidesteps the ASCII-only restriction
+        # entirely while keeping the comparison constant-time.
+        if not token or not hmac.compare_digest(
+            token.encode('utf-8'), BEARER_TOKEN.encode('utf-8')
+        ):
             logging.warning(f"API access attempt with invalid token from {request.remote_addr}")
             # 401, not 403 (S8c): clients that retry on 401 need to see it.
             abort(401, description="Invalid bearer token")
@@ -769,6 +831,15 @@ class WebhookConfigResource(Resource):
 
         data = webhooks_ns.payload
 
+        # Fix 3: a literal JSON `null` body (Content-Type: application/json,
+        # body `null`) is valid JSON, so it passes flask-restx's payload
+        # parsing and reaches here as data=None. `'webhook' in data` then
+        # raises TypeError: argument of type 'NoneType' is not a container
+        # -- and this check runs BEFORE the try block below, so that
+        # TypeError was an unhandled 500 instead of a client error.
+        if not isinstance(data, dict):
+            webhooks_ns.abort(400, 'Request body must be a JSON object')
+
         # Validate webhook config field ranges
         if 'webhook' in data and data['webhook']:
             is_valid, error_msg = validate_webhook_config(data['webhook'])
@@ -899,6 +970,19 @@ class WebhookConfigResource(Resource):
                 }
             }
 
+        except ConfigValidationError as e:
+            # Fix 6: api_models.validate_webhook_config/validate_thresholds
+            # already reject most bad input above, but they check field
+            # types/ranges against the SUBMITTED payload only; WebhookConfig
+            # and AlertThresholds' own __post_init__ validation is the
+            # authority on the RESULTING merged object and can still fire
+            # (e.g. edge cases those two validators don't cover). Without
+            # this clause, ConfigValidationError falls into the broad
+            # `except Exception` below and becomes a 500 -- turning a client
+            # input error into a server error the moment __post_init__
+            # validation was added.
+            webhooks_ns.abort(400, str(e))
+
         except Exception as e:
             error_id = generate_error_id()
             logging.exception(f"Error updating webhook config [error_id: {error_id}]")
@@ -944,12 +1028,29 @@ class WebhookTestResource(Resource):
                     'timestamp': last_updated
                 }
             else:
-                webhooks_ns.abort(500, 'Failed to send test webhook')
+                error_id = generate_error_id()
+                webhooks_ns.abort(500, 'Failed to send test webhook', error_id=error_id)
 
+        except HTTPException:
+            # Fix 9: webhooks_ns.abort() above raises an HTTPException, and
+            # HTTPException subclasses Exception -- so without this clause
+            # the `except Exception` below caught the app's OWN control
+            # flow for an ordinary "Slack was unreachable" outcome, logged a
+            # full traceback via logging.exception (as if it were a genuine
+            # crash), and minted a second, different error_id than the one
+            # already sent to the client in the abort() body above. Letting
+            # it propagate unmodified keeps the response and the log
+            # correlated to the one error_id that was actually returned.
+            raise
         except Exception as e:
             error_id = generate_error_id()
             logging.exception(f"Error sending test webhook [error_id: {error_id}]")
-            webhooks_ns.abort(500, 'Failed to send test webhook')
+            # error_id passed through (previously omitted here, unlike the
+            # sibling PUT /api/webhook/config handler's abort(..., error_id=
+            # error_id) above) so a genuine unexpected exception here is
+            # still correlatable to its log entry, like every other 500 in
+            # this file.
+            webhooks_ns.abort(500, 'Failed to send test webhook', error_id=error_id)
 
 
 @webhooks_ns.route('/enable')
@@ -1005,7 +1106,13 @@ def health():
 
     Public (unauthenticated) by design, so it is intentionally stripped to
     liveness signals only -- NO sensor readings and NO process internals
-    (S10). Returns 503 when the sensor thread is dead OR the last reading
+    (S10). `temperature_compensated` is the one exception: it is a boolean
+    calibration-STATUS flag (whether CPU-heat compensation was applied to
+    the last reading, see get_compensated_temperature()'s docstring), not a
+    sensor reading or a process internal, so exposing it here doesn't
+    violate that boundary -- it tells a load balancer/operator the reading
+    behind `healthy` is trustworthy without revealing the reading itself.
+    Returns 503 when the sensor thread is dead OR the last reading
     is stale, instead of unconditionally reporting "healthy" (S6): a
     thread that is technically alive but stuck (e.g. every read failing
     inside a caught exception) used to look identical to a healthy one to

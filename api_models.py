@@ -8,6 +8,11 @@ Provides automatic OpenAPI/Swagger documentation generation.
 from flask_restx import Namespace, fields
 from urllib.parse import urlparse
 
+from webhook_service import (
+    RETRY_COUNT_RANGE, RETRY_DELAY_RANGE, TIMEOUT_RANGE,
+    TEMP_RANGE, HUMIDITY_RANGE,
+)
+
 # Create namespace for webhook endpoints
 webhooks_ns = Namespace('webhooks', description='Webhook configuration and management')
 
@@ -25,20 +30,20 @@ webhook_config_input = webhooks_ns.model('WebhookConfigInput', {
     ),
     'retry_count': fields.Integer(
         default=3,
-        min=1,
-        max=10,
+        min=RETRY_COUNT_RANGE[0],
+        max=RETRY_COUNT_RANGE[1],
         description='Number of retry attempts (1-10)'
     ),
     'retry_delay': fields.Integer(
         default=5,
-        min=1,
-        max=60,
+        min=RETRY_DELAY_RANGE[0],
+        max=RETRY_DELAY_RANGE[1],
         description='Initial retry delay in seconds (1-60)'
     ),
     'timeout': fields.Integer(
         default=10,
-        min=5,
-        max=120,
+        min=TIMEOUT_RANGE[0],
+        max=TIMEOUT_RANGE[1],
         description='Request timeout in seconds (5-120)'
     )
 })
@@ -47,26 +52,26 @@ webhook_config_input = webhooks_ns.model('WebhookConfigInput', {
 alert_thresholds_input = webhooks_ns.model('AlertThresholdsInput', {
     'temp_min_c': fields.Float(
         description='Minimum temperature threshold in Celsius (-50 to 100)',
-        min=-50,
-        max=100,
+        min=TEMP_RANGE[0],
+        max=TEMP_RANGE[1],
         example=15.0
     ),
     'temp_max_c': fields.Float(
         description='Maximum temperature threshold in Celsius (-50 to 100)',
-        min=-50,
-        max=100,
+        min=TEMP_RANGE[0],
+        max=TEMP_RANGE[1],
         example=27.0
     ),
     'humidity_min': fields.Float(
         description='Minimum humidity threshold percentage (0-100)',
-        min=0,
-        max=100,
+        min=HUMIDITY_RANGE[0],
+        max=HUMIDITY_RANGE[1],
         example=30.0
     ),
     'humidity_max': fields.Float(
         description='Maximum humidity threshold percentage (0-100)',
-        min=0,
-        max=100,
+        min=HUMIDITY_RANGE[0],
+        max=HUMIDITY_RANGE[1],
         example=70.0
     )
 })
@@ -205,9 +210,9 @@ def validate_webhook_config(webhook: dict) -> tuple:
             if not isinstance(enabled, bool):
                 raise ValueError('enabled must be a boolean')
 
-        _validate_numeric_field(webhook, 'retry_count', 1, 10, integer_only=True, allow_null=False)
-        _validate_numeric_field(webhook, 'retry_delay', 1, 60, integer_only=True, allow_null=False)
-        _validate_numeric_field(webhook, 'timeout', 5, 120, integer_only=True, allow_null=False)
+        _validate_numeric_field(webhook, 'retry_count', *RETRY_COUNT_RANGE, integer_only=True, allow_null=False)
+        _validate_numeric_field(webhook, 'retry_delay', *RETRY_DELAY_RANGE, integer_only=True, allow_null=False)
+        _validate_numeric_field(webhook, 'timeout', *TIMEOUT_RANGE, integer_only=True, allow_null=False)
     except ValueError as e:
         return False, str(e)
 
@@ -251,13 +256,20 @@ def validate_thresholds(thresholds: dict, current_thresholds=None) -> tuple:
         if not isinstance(thresholds, dict):
             raise ValueError('thresholds must be an object')
 
-        _validate_numeric_field(thresholds, 'temp_min_c', -50, 100, integer_only=False, allow_null=True)
-        _validate_numeric_field(thresholds, 'temp_max_c', -50, 100, integer_only=False, allow_null=True)
-        _validate_numeric_field(thresholds, 'humidity_min', 0, 100, integer_only=False, allow_null=True)
-        _validate_numeric_field(thresholds, 'humidity_max', 0, 100, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'temp_min_c', *TEMP_RANGE, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'temp_max_c', *TEMP_RANGE, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'humidity_min', *HUMIDITY_RANGE, integer_only=False, allow_null=True)
+        _validate_numeric_field(thresholds, 'humidity_max', *HUMIDITY_RANGE, integer_only=False, allow_null=True)
 
         def effective(field):
-            if field in thresholds and thresholds[field] is not None:
+            # Mirror the merge in temp_monitor.py's PUT handler exactly: a
+            # key that is PRESENT (even as explicit JSON null) overrides the
+            # stored value; only an ABSENT key falls back to current_thresholds.
+            # Treating an explicit null as "fall back to current" (the
+            # previous behavior) disagreed with the merge, which treats
+            # explicit null as "clear this field" -- so a legal clear could
+            # get a spurious 400 naming the field the operator just cleared.
+            if field in thresholds:
                 return thresholds[field]
             return _get_threshold_field(current_thresholds, field)
 

@@ -108,7 +108,7 @@ class TestBackoffDelays(unittest.TestCase):
             url="https://hooks.slack.com/services/TEST/WEBHOOK/URL",
             enabled=True,
             retry_count=6,
-            retry_delay=100,
+            retry_delay=60,
             timeout=10
         )
         service = WebhookService(webhook_config=config)
@@ -116,9 +116,15 @@ class TestBackoffDelays(unittest.TestCase):
 
         service._send_webhook({"test": "payload"})
 
-        # 100*2^0=100, 100*2^1=200, 100*2^2=400->300, 100*2^3=800->300,
-        # 100*2^4=1600->300
-        expected = [call(100), call(200), call(300), call(300), call(300)]
+        # 60 is the LARGEST retry_delay the config layer accepts
+        # (RETRY_DELAY_RANGE, enforced by WebhookConfig.__post_init__ and by
+        # api_models._validate_numeric_field). This case used to pass 100,
+        # which the PUT API has always rejected and which only became
+        # constructible at all because env-var config bypassed validation --
+        # the very gap __post_init__ closes. Don't raise it back; 60 still
+        # reaches the cap:
+        # 60*2^0=60, 60*2^1=120, 60*2^2=240, 60*2^3=480->300, 60*2^4=960->300
+        expected = [call(60), call(120), call(240), call(300), call(300)]
         self.assertEqual(mock_sleep.call_args_list, expected)
 
 

@@ -17,7 +17,7 @@ This file serves as the foundational instructional context for Gemini CLI intera
 - **`temp_monitor.py`**: The core application, handling the Flask server, background sensor reading loop, and data caching.
 - **`webhook_service.py`**: A thread-safe service managing alert logic, threshold checking, and Slack communication with exponential backoff retries.
 - **`api_models.py`**: Definitions for API request/response structures and validation logic using Flask-RESTX namespaces.
-- **`sense_hat.py`**: A mock implementation of the Sense HAT library, enabling development and testing on standard hardware.
+- **`mock_sense_hat.py`**: A mock implementation of the Sense HAT library, enabling development and testing on standard hardware. Loaded only when `USE_MOCK_SENSOR` is set. (This file was previously named `sense_hat.py`, which shadowed the real `sense-hat` package on `sys.path` and made the app silently report a constant fabricated 25.0°C; it was renamed to prevent that collision.)
 
 ---
 
@@ -68,10 +68,10 @@ The project uses `unittest` and `unittest.mock` to simulate hardware environment
 
 ### Coding Standards
 - **Thread Safety:** Always use `threading.Lock()` when accessing or modifying shared state (like webhook configurations or alert counters) across the background sensor thread and the Flask request threads.
-- **Sensor Calibration:** Temperature readings are compensated for CPU heat using a compensation factor (default `0.7`). Adjust this in `temp_monitor.py` if physical calibration is required.
+- **Sensor Calibration:** Temperature readings are compensated for CPU heat using `TEMP_CPU_FACTOR` (default `0.7`) and an empirical offset `TEMP_OFFSET_F` (default `-13.5`). Both are environment variables — recalibrate via `.env`, no code change or rebuild needed.
 - **API Design:** All new API endpoints should be registered within the appropriate Flask-RESTX namespace in `api_models.py` and include documentation decorators.
 
 ### Contribution Guidelines
 - **Bearer Authentication:** All non-public API endpoints MUST use the `@require_token` decorator.
-- **Hardware Mocking:** When adding new hardware features, update `sense_hat.py` to ensure the project remains runnable on non-Raspberry Pi systems.
+- **Hardware Mocking:** When adding new hardware features, update `mock_sense_hat.py` to ensure the project remains runnable on non-Raspberry Pi systems.
 - **Logging:** Use the configured logger (via `logging`) instead of `print()` statements for application tracking.

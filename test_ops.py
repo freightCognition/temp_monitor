@@ -12,15 +12,18 @@ another 2s for the same stated reason ("give the thread a moment"),
 delaying every import/startup by 4s -- and neither duration is even long
 enough to guarantee a first reading. Fix: a single wait, in one place.
 """
+import json
 import subprocess
 import sys
 import unittest
+import unittest.mock
 from logging.handlers import RotatingFileHandler
 
 # Sets BEARER_TOKEN and mocks sense_hat; MUST precede importing temp_monitor.
-import test_support  # noqa: F401
+from test_support import BaseAPITestCase
 
 import temp_monitor  # noqa: E402
+from webhook_service import WebhookService, WebhookConfig  # noqa: E402
 
 
 class TestLogRotation(unittest.TestCase):
@@ -76,6 +79,57 @@ class TestNoDoubleStartupSleep(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('ok', result.stdout)
+
+
+class TestWebhookTestEndpointCleanFailure(BaseAPITestCase):
+    """Fix 9: WebhookTestResource.post()'s own webhooks_ns.abort(500, ...)
+    call for an ordinary "the webhook send failed" outcome (Slack
+    unreachable, non-2xx response, etc.) is an HTTPException, which
+    subclasses Exception -- so the broad `except Exception` below it caught
+    that control flow too, logging a full traceback via logging.exception
+    as though it were a genuine crash, and generating a SECOND error_id
+    that didn't match the one already in the abort() response body. The
+    fix adds an `except HTTPException: raise` before the broad clause, and
+    passes error_id through on both paths."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_webhook_service = temp_monitor.webhook_service
+        temp_monitor.webhook_service = WebhookService(
+            webhook_config=WebhookConfig(url='https://hooks.slack.com/services/TEST')
+        )
+
+    def tearDown(self):
+        temp_monitor.webhook_service = self._orig_webhook_service
+
+    def test_clean_send_failure_returns_error_id_without_logging_traceback(self):
+        with unittest.mock.patch.object(
+            temp_monitor.webhook_service, 'send_status_update', return_value=False
+        ), unittest.mock.patch.object(temp_monitor.logging, 'exception') as mock_exception:
+            response = self.client.post('/api/webhook/test', headers=self.auth_header)
+
+        self.assertEqual(response.status_code, 500)
+        data = json.loads(response.data)
+        self.assertTrue(
+            data.get('error_id'),
+            f"error_id must be present on a clean send failure, got: {data}",
+        )
+        mock_exception.assert_not_called()
+
+    def test_genuine_exception_still_logs_and_returns_matching_error_id(self):
+        """Regression guard: a REAL unexpected exception must still be
+        logged (unlike the clean-failure path above) and still carry an
+        error_id in the response, same as every other 500 in this file."""
+        with unittest.mock.patch.object(
+            temp_monitor.webhook_service, 'send_status_update',
+            side_effect=RuntimeError('boom')
+        ), unittest.mock.patch.object(temp_monitor.logging, 'exception') as mock_exception:
+            response = self.client.post('/api/webhook/test', headers=self.auth_header)
+
+        self.assertEqual(response.status_code, 500)
+        data = json.loads(response.data)
+        self.assertTrue(data.get('error_id'), f"error_id must be present, got: {data}")
+        mock_exception.assert_called_once()
 
 
 if __name__ == '__main__':

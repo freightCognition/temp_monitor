@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `WebhookService` class: Handles outbound Slack webhook communication
 - `WebhookConfig` dataclass: Configuration for webhook endpoint (URL, retry logic, timeout)
 - `AlertThresholds` dataclass: Temperature/humidity thresholds that trigger alerts
-- Features: Alert cooldown (5-min between same alert type), exponential backoff retry logic, thread-safe operations with locks
+- Features: Alert cooldown (900s / 15-min between same alert type), exponential backoff retry logic, thread-safe operations with locks
 - Methods: `check_and_alert()` (threshold checking), `send_status_update()` (periodic reports), `send_slack_message()` (generic Slack formatting)
 
 **API Models (api_models.py)**
@@ -36,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Validation functions: `validate_webhook_config()` and `validate_thresholds()` (cross-field validation)
 
 **Sensor Data Processing**
-- `get_compensated_temperature()`: Takes 10 readings (5 from humidity + 5 from pressure sensors), filters outliers, applies CPU heat compensation (factor: 0.7) and -4°F correction
+- `get_compensated_temperature()`: Takes 10 readings (5 from humidity + 5 from pressure sensors), filters outliers, applies CPU heat compensation (factor: 0.7) and a -13.5°F correction
 - `get_humidity()`: Takes 3 readings, filters outliers, applies +4% correction
 - `get_cpu_temperature()`: Reads from `/sys/class/thermal/thermal_zone0/temp`
 
@@ -46,12 +46,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `GET /` - Web dashboard (HTML)
 - `GET /docs` - Swagger UI
 - `GET /health` - Health check endpoint for monitoring/load balancers
-- `GET /metrics` - System and application metrics (requires psutil for system stats)
 
 **Protected Routes (require Bearer token):**
 - `GET /api/temp` - Current temperature/humidity data
 - `GET /api/raw` - Raw sensor readings for debugging
 - `GET /api/verify-token` - Token validation check
+- `GET /metrics` - System and application metrics (requires psutil for system stats); exposes process internals (RSS, thread count, open FDs), so it requires a token since the service is reachable over a public tunnel
 - `GET /api/webhook/config` - Get webhook configuration
 - `PUT /api/webhook/config` - Update webhook config and thresholds (with validation)
 - `POST /api/webhook/test` - Send test webhook
@@ -62,12 +62,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Environment variables (from `.env`):
 
-All boolean variables below (`WEBHOOK_ENABLED`, `STATUS_UPDATE_ENABLED`,
-`STATUS_UPDATE_ON_STARTUP`, `USE_MOCK_SENSOR`) are parsed by one helper,
-`_parse_env_bool`, and accept `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`
-(case-insensitive). An unset or empty value uses the documented default; any
-other value raises at startup naming the offending variable, rather than being
-silently treated as false.
+Every env var below is read through one of two helpers, so a malformed value
+fails at startup naming the offending variable rather than being silently
+coerced or crashing with an unattributed traceback. Boolean variables
+(`WEBHOOK_ENABLED`, `STATUS_UPDATE_ENABLED`, `STATUS_UPDATE_ON_STARTUP`,
+`USE_MOCK_SENSOR`) go through `_parse_env_bool` and accept
+`1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off` (case-insensitive). Numeric
+variables go through `_parse_env_number`. For both, an unset OR empty value
+uses the documented default; any other unparseable value raises at startup
+naming the variable, rather than being silently treated as false/default or
+crashing the whole process without saying why.
 
 - `LOG_FILE` - Path to log file (default: `temp_monitor.log`)
 - `BEARER_TOKEN` - Required for API access (generated with `python3 -c "import secrets; print(secrets.token_hex(32))"`)
@@ -77,6 +81,7 @@ silently treated as false.
 - `WEBHOOK_RETRY_DELAY` - Initial retry delay in seconds (default: 5)
 - `WEBHOOK_TIMEOUT` - Request timeout (default: 10)
 - `ALERT_TEMP_MIN_C`, `ALERT_TEMP_MAX_C`, `ALERT_HUMIDITY_MIN`, `ALERT_HUMIDITY_MAX` - Thresholds
+- `ALERT_COOLDOWN_SECONDS` - Minimum time between repeating the same alert type (default: 900)
 - `STATUS_UPDATE_ENABLED` - Enable periodic status updates (default: false)
 - `STATUS_UPDATE_INTERVAL` - Status update frequency in seconds (default: 3600)
 - `STATUS_UPDATE_ON_STARTUP` - Send status update on startup (default: false)
@@ -104,7 +109,7 @@ silently treated as false.
 - Swagger UI accessible without auth for API documentation
 
 **Webhook Reliability**
-- Alert cooldown prevents spam (5 minutes between same alert type)
+- Alert cooldown prevents spam (900 seconds / 15 minutes between same alert type, via `ALERT_COOLDOWN_SECONDS`)
 - Exponential backoff: delay = initial_delay × 2^(attempt_number)
 - Configurable retry count (1-10) and timeout (5-120 seconds)
 - Thread-safe alert tracking via locks
@@ -132,15 +137,22 @@ docker compose up -d
 ### Testing
 
 ```bash
-# Run API endpoint tests
-python test_webhook_api.py
+# Run the whole suite the way CI does. Both invocations are deliberate:
+# script style misses tests a file's custom main() forgets to register
+# (this actually happened -- six classes in test_webhook.py were defined
+# but never added to its suite), while discover misses a file whose
+# __main__ block is broken, since it never runs __main__ at all.
+for f in test_*.py; do
+  [ "$f" = "test_support.py" ] && continue   # shared helper, no test cases
+  python "$f" || break
+done
+python -m unittest discover -v -p 'test_*.py'
 
-# Run webhook service tests
+# Or a single file while iterating
 python test_webhook.py
-
-# Run periodic update tests
-python test_periodic_updates.py
 ```
+
+Tests need `BEARER_TOKEN` set; `export BEARER_TOKEN=test_token_ci` matches CI.
 
 ### Docker Deployment
 
@@ -266,11 +278,21 @@ is ever changed, recalibrate rather than keeping the old offset.
 - `webhook_service.py` - Webhook/alert logic (~410 lines)
 - `api_models.py` - Flask-RESTX models and validation (~170 lines)
 - `wsgi.py` - Production WSGI entry point (waitress)
-- `sense_hat.py` - Mock/compatibility layer for Sense HAT
+- `mock_sense_hat.py` - Mock/compatibility layer for Sense HAT (loaded only when `USE_MOCK_SENSOR` is set)
 - `test_webhook_api.py` - Integration tests for API endpoints
 - `test_webhook.py` - Unit tests for webhook service
+- `test_webhook_retry.py` - Unit tests for webhook retry/backoff logic
 - `test_periodic_updates.py` - Tests for periodic status updates
 - `test_api_models.py` - Unit tests for API model validation
+- `test_auth.py` - Tests for Bearer token authentication
+- `test_config_endpoint.py` - Tests for the webhook config endpoint
+- `test_dashboard.py` - Tests for the web dashboard route
+- `test_env_parsing.py` - Tests for `_parse_env_bool` / `_parse_env_number`
+- `test_health.py` - Tests for the `/health` endpoint
+- `test_ops.py` - Tests for operational/metrics endpoints
+- `test_sensor_integrity.py` - Tests for sensor failure/edge-case handling
+- `test_sensor_math.py` - Tests for sensor reading and compensation math
+- `test_support.py` - Shared test helpers/fixtures
 - `Dockerfile` - ARM-compatible build (Python 3.9)
 - `docker-compose.yml` - Production-ready compose configuration
 - `requirements.txt` - Python dependencies

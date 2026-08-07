@@ -95,6 +95,22 @@ class TestRequireTokenAuth(BaseAPITestCase):
             "require_token should not use a plain != comparison on the token"
         )
 
+    def test_non_ascii_token_returns_401_not_500(self):
+        """Fix 7: Werkzeug decodes request headers as latin-1, so an
+        Authorization header byte above 0x7F reaches require_token() as a
+        non-ASCII str. hmac.compare_digest(str, str) raises TypeError when
+        either operand isn't ASCII-only -- previously uncaught, so an
+        UNAUTHENTICATED caller could turn any protected endpoint into a 500
+        with a stack trace just by sending a non-ASCII byte in the header.
+        Encoding both sides to bytes before comparing avoids the ASCII
+        restriction; a non-matching token must still cleanly 401."""
+        response = self.client.get(
+            '/api/temp',
+            headers={'Authorization': 'Bearer éèêñ'}
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('WWW-Authenticate', response.headers)
+
     def test_require_token_raises_rather_than_returns(self):
         """Guard against the near-miss described in the module docstring:
         require_token must raise (abort) on rejection, not return a

@@ -15,6 +15,56 @@ import threading
 from urllib.parse import urlparse
 
 
+class ConfigValidationError(ValueError):
+    """Raised when WebhookConfig/AlertThresholds are constructed with values
+    that violate documented invariants.
+
+    Subclasses ValueError so existing `except ValueError` call sites keep
+    working unchanged.
+    """
+
+
+# Single source of truth for the documented invariants. api_models.py
+# imports these rather than repeating the literals, so the API-payload
+# validation and the dataclass invariants below can't drift apart.
+RETRY_COUNT_RANGE = (1, 10)
+RETRY_DELAY_RANGE = (1, 60)
+TIMEOUT_RANGE = (5, 120)
+TEMP_RANGE = (-50, 100)
+HUMIDITY_RANGE = (0, 100)
+
+
+def _check_int_range(value, field: str, value_range: tuple) -> None:
+    """Raise ConfigValidationError unless value is a non-bool int in range.
+
+    Booleans are explicitly rejected even though Python considers bool a
+    subclass of int (True/False must not be accepted as 1/0), matching
+    api_models._validate_numeric_field.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigValidationError(f'{field} must be an integer')
+    low, high = value_range
+    if not (low <= value <= high):
+        raise ConfigValidationError(f'{field} must be between {low} and {high}')
+
+
+def _check_optional_number_range(value, field: str, value_range: tuple) -> None:
+    """Raise ConfigValidationError unless value is None or a non-bool number in range.
+
+    None is intentionally legal here: AlertThresholds uses None to mean "no
+    alert configured for this field", and clearing a field to None via the
+    API must keep working (see api_models.validate_thresholds
+    allow_null=True).
+    """
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigValidationError(f'{field} must be a number')
+    low, high = value_range
+    if not (low <= value <= high):
+        raise ConfigValidationError(f'{field} must be between {low} and {high}')
+
+
 @dataclass
 class WebhookConfig:
     """Configuration for a webhook endpoint"""
@@ -24,6 +74,25 @@ class WebhookConfig:
     retry_delay: int = 5  # seconds
     timeout: int = 10  # seconds
 
+    def __post_init__(self):
+        """
+        Reject illegal state at construction time.
+
+        Before this, retry_count/timeout/etc. range checks lived only in
+        api_models.validate_webhook_config, which only the PUT API path
+        calls. Module init (temp_monitor.py) builds WebhookConfig directly
+        from env vars, bypassing that check entirely -- a misconfigured
+        env var (e.g. WEBHOOK_TIMEOUT=99999) would silently produce a
+        broken config instead of failing loudly at startup.
+        """
+        if not isinstance(self.url, str) or not self.url.strip():
+            raise ConfigValidationError('url must be a non-empty string')
+        if not isinstance(self.enabled, bool):
+            raise ConfigValidationError('enabled must be a boolean')
+        _check_int_range(self.retry_count, 'retry_count', RETRY_COUNT_RANGE)
+        _check_int_range(self.retry_delay, 'retry_delay', RETRY_DELAY_RANGE)
+        _check_int_range(self.timeout, 'timeout', TIMEOUT_RANGE)
+
 
 @dataclass
 class AlertThresholds:
@@ -32,6 +101,28 @@ class AlertThresholds:
     temp_max_c: Optional[float] = 32.0  # 90°F
     humidity_min: Optional[float] = 20.0
     humidity_max: Optional[float] = 70.0
+
+    def __post_init__(self):
+        """
+        Reject illegal state at construction time (see WebhookConfig
+        docstring above for why this matters -- module init bypasses
+        api_models.validate_thresholds entirely).
+
+        Fields stay Optional; None ("no alert configured for this field",
+        i.e. explicit null-to-clear) is intentionally legal and the min<max
+        cross-check only fires when both bounds are non-None.
+        """
+        _check_optional_number_range(self.temp_min_c, 'temp_min_c', TEMP_RANGE)
+        _check_optional_number_range(self.temp_max_c, 'temp_max_c', TEMP_RANGE)
+        _check_optional_number_range(self.humidity_min, 'humidity_min', HUMIDITY_RANGE)
+        _check_optional_number_range(self.humidity_max, 'humidity_max', HUMIDITY_RANGE)
+
+        if (self.temp_min_c is not None and self.temp_max_c is not None
+                and self.temp_min_c >= self.temp_max_c):
+            raise ConfigValidationError('temp_min_c must be less than temp_max_c')
+        if (self.humidity_min is not None and self.humidity_max is not None
+                and self.humidity_min >= self.humidity_max):
+            raise ConfigValidationError('humidity_min must be less than humidity_max')
 
 
 class WebhookService:
@@ -69,33 +160,59 @@ class WebhookService:
             logging.warning(f"Error masking webhook URL: {e}")
             return "<invalid-url>"
 
-    def _scrub_exception(self, exc: Exception, url: str) -> str:
+    def _scrub_text(self, text: str, url: str) -> str:
         """
-        Remove the webhook URL (and its secret path segments) from an
-        exception's message before it gets logged.
+        Remove the webhook URL (and its secret path segments) from
+        arbitrary text before it gets logged.
 
-        requests exceptions (e.g. connection errors) often embed the full
-        URL or its path in their message, which would otherwise leak the
-        Slack webhook secret into logs and defeat _mask_url.
+        requests exceptions (e.g. connection errors) and raw response
+        bodies can embed the full URL or its path, which would otherwise
+        leak the Slack webhook secret into logs and defeat _mask_url.
+
+        urlparse() does not raise for ordinary malformed URLs (it returns
+        a degenerate result), but it CAN raise ValueError for a narrow
+        class of inputs (e.g. malformed IPv6-bracket host syntax). This
+        function's entire purpose is keeping the secret out of logs, so a
+        failure here must degrade safely: if scrubbing itself fails, this
+        returns a fully-redacted placeholder rather than the
+        partially-scrubbed `text` -- returning partially-scrubbed text on
+        error would defeat the whole function, since the caller has no way
+        to know scrubbing didn't complete.
 
         Args:
-            exc: The exception whose message may contain the secret URL
+            text: Text that may contain the secret URL or its path
             url: The webhook URL that was being requested
 
         Returns:
-            The exception message with the URL/path replaced by a masked form
+            `text` with the URL/path replaced by a masked form, or a fully
+            redacted placeholder if scrubbing itself failed
         """
-        text = str(exc)
         text = text.replace(url, self._mask_url(url))
 
         try:
             path = urlparse(url).path
             if path:
                 text = text.replace(path, "<redacted-path>")
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Failed to scrub webhook URL from logged text: {e}")
+            return "<redacted: webhook secret could not be scrubbed>"
 
         return text
+
+    def _scrub_exception(self, exc: Exception, url: str) -> str:
+        """
+        Remove the webhook URL (and its secret path segments) from an
+        exception's message before it gets logged.
+
+        Args:
+            exc: The exception whose message may contain the secret URL
+            url: The webhook URL that was being requested
+
+        Returns:
+            The exception message with the URL/path replaced by a masked
+            form (see _scrub_text for the failure-mode contract)
+        """
+        return self._scrub_text(str(exc), url)
 
     def set_webhook_config(self, config: WebhookConfig):
         """Update webhook configuration"""
@@ -143,13 +260,20 @@ class WebhookService:
                     logging.info(f"Webhook sent successfully to {self._mask_url(url)}")
                     return True
                 else:
-                    body = (response.text or "")[:200]
+                    # An error body can echo the request URL (e.g. a proxy
+                    # or gateway error page), so this must be scrubbed the
+                    # same as exception text before logging.
+                    body = self._scrub_text((response.text or "")[:200], url)
                     logging.warning(
                         f"Webhook failed with status {response.status_code}: {body}"
                     )
 
-            except requests.exceptions.Timeout:
-                logging.error(f"Webhook timeout (attempt {attempt + 1}/{config.retry_count})")
+            except requests.exceptions.Timeout as e:
+                # Timeout messages can also embed the request URL, so route
+                # through the same scrubbing as the RequestException branch
+                # below instead of omitting the exception text entirely.
+                scrubbed = self._scrub_exception(e, url)
+                logging.error(f"Webhook timeout (attempt {attempt + 1}/{config.retry_count}): {scrubbed}")
             except requests.exceptions.RequestException as e:
                 scrubbed = self._scrub_exception(e, url)
                 logging.error(f"Webhook request failed (attempt {attempt + 1}/{config.retry_count}): {scrubbed}")

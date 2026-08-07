@@ -41,12 +41,20 @@ jobs:
           python -m pip install --upgrade pip
           grep -v '^sense-hat' requirements.txt | grep -v '^#' | grep -v '^$' | xargs pip install
 
-      - name: Run tests
+      - name: Run tests (script style — each file as CI invokes it)
         run: |
-          python test_webhook_api.py
-          python test_webhook.py
-          python test_periodic_updates.py
-          python test_api_models.py
+          for f in test_*.py; do
+            [ "$f" = "test_support.py" ] && continue   # shared helper, no test cases
+            echo "=== $f ==="
+            python "$f" || exit 1
+          done
+
+      - name: Run tests (discover — catches files not wired to a runner)
+        # Kept alongside the script-style loop above rather than instead of it: script
+        # style misses tests that some files' custom main() doesn't wire up, while
+        # discover alone would hide a file whose __main__ block is broken (it never
+        # touches __main__ at all). Running both closes each blind spot the other has.
+        run: python -m unittest discover -v -p 'test_*.py'
 
   docker-build:
     # Builds the actual Docker image and boots a real container from it, so a

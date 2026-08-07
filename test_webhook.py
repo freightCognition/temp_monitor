@@ -10,7 +10,9 @@ import sys
 import unittest
 from unittest.mock import patch, MagicMock
 import requests
-from webhook_service import WebhookService, WebhookConfig, AlertThresholds
+from webhook_service import (
+    WebhookService, WebhookConfig, AlertThresholds, ConfigValidationError,
+)
 
 
 class TestSlackFormatting(unittest.TestCase):
@@ -827,6 +829,208 @@ class TestSlackPayloadSchema(unittest.TestCase):
         self.assertIn("text", attachment["mrkdwn_in"])
 
 
+class TestScrubException(unittest.TestCase):
+    """_scrub_exception/_scrub_text must never leak the webhook secret path
+    into logs, and must degrade to a fully-redacted placeholder -- never a
+    partially-scrubbed string -- if scrubbing itself fails (Fix 5).
+
+    Previously the path-scrub step swallowed all exceptions with a bare
+    `except Exception: pass`, silently leaving the text only
+    partially scrubbed (URL replaced, but path segments intact) whenever
+    urlparse() raised (e.g. for malformed IPv6-bracket URLs), and the
+    caller logged that string as though scrubbing had fully succeeded.
+    """
+
+    def setUp(self):
+        self.secret_url = "https://hooks.slack.com/services/TSECRET/BSECRET/supersecrettoken"
+        self.config = WebhookConfig(url=self.secret_url, enabled=True, retry_count=1)
+        self.service = WebhookService(webhook_config=self.config)
+
+    def test_full_url_in_message_is_scrubbed(self):
+        exc = Exception(f"connection failed: {self.secret_url}")
+        scrubbed = self.service._scrub_exception(exc, self.secret_url)
+        self.assertNotIn("supersecrettoken", scrubbed)
+        self.assertNotIn("TSECRET", scrubbed)
+
+    def test_path_only_in_message_is_scrubbed(self):
+        # requests connection errors often embed only the path, not the
+        # full scheme+host+path, e.g. "Max retries exceeded with url: /..."
+        exc = Exception(
+            "Max retries exceeded with url: /services/TSECRET/BSECRET/supersecrettoken"
+        )
+        scrubbed = self.service._scrub_exception(exc, self.secret_url)
+        self.assertNotIn("supersecrettoken", scrubbed)
+        self.assertNotIn("TSECRET", scrubbed)
+        self.assertNotIn("BSECRET", scrubbed)
+
+    @patch('webhook_service.requests.post')
+    def test_timeout_branch_scrubs(self, mock_post):
+        """Regression: the Timeout except branch used to log a fixed
+        string with NO exception text at all (unlike the sibling
+        RequestException branch, which always included a scrubbed
+        message) -- so it never leaked the secret, but only by discarding
+        the exception detail entirely rather than by scrubbing it.
+
+        Assert both properties: the secret never appears, AND the
+        (scrubbed) exception detail is now actually present in the log,
+        which the old fixed-string branch never included.
+        """
+        mock_post.side_effect = requests.exceptions.Timeout(
+            f"Read timed out: {self.secret_url}"
+        )
+
+        with self.assertLogs(level='ERROR') as cm:
+            result = self.service._send_webhook({"test": "payload"})
+
+        self.assertFalse(result)
+        log_output = "\n".join(cm.output)
+        self.assertNotIn("supersecrettoken", log_output)
+        self.assertNotIn("TSECRET", log_output)
+        # The masked host (scrubbed exception detail) must be present --
+        # the old branch logged only a fixed string with no exception
+        # detail whatsoever, scrubbed or not.
+        self.assertIn("hooks.slack.com", log_output)
+        self.assertIn("Read timed out", log_output)
+
+    def test_scrub_failure_degrades_to_fully_redacted_placeholder(self):
+        """If urlparse() itself raises (e.g. malformed IPv6-bracket host),
+        scrubbing must not fall back to the partially-scrubbed text -- it
+        must discard it entirely in favor of a placeholder.
+
+        This only actually leaks (and so only actually discriminates
+        old vs. new behavior) when the exception text contains the secret
+        PATH but not the full URL string verbatim: the first `.replace()`
+        (URL -> masked URL) is plain string matching and doesn't itself
+        depend on urlparse succeeding, so it silently no-ops when the full
+        URL isn't present as a substring -- leaving the path-scrub step
+        (the one guarded by the try/except this test targets) as the ONLY
+        thing standing between the secret path and the log line.
+        """
+        malformed_url = "http://[invalid"
+        exc = Exception(
+            "Max retries exceeded with url: /services/TSECRET/BSECRET/supersecrettoken"
+        )
+
+        scrubbed = self.service._scrub_exception(exc, malformed_url)
+
+        self.assertNotIn("TSECRET", scrubbed)
+        self.assertNotIn("BSECRET", scrubbed)
+        self.assertNotIn("supersecrettoken", scrubbed)
+
+
+class TestWebhookConfigInvariants(unittest.TestCase):
+    """WebhookConfig must reject illegal state at construction time (Fix 6),
+    not just when built through the API's validate_webhook_config -- module
+    init in temp_monitor.py constructs WebhookConfig directly from env
+    vars, bypassing that API-only check entirely.
+    """
+
+    def test_empty_url_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            WebhookConfig(url="")
+
+    def test_whitespace_only_url_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            WebhookConfig(url="   ")
+
+    def test_non_string_url_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            WebhookConfig(url=12345)
+
+    def test_non_bool_enabled_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            WebhookConfig(url="https://test.url", enabled="yes")
+
+    def test_retry_count_out_of_range_rejected(self):
+        for value in (0, 11):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigValidationError):
+                    WebhookConfig(url="https://test.url", retry_count=value)
+
+    def test_retry_count_bool_rejected(self):
+        """Regression: bool is a subclass of int, so True/False could sneak
+        past a naive `1 <= value <= 10` range check."""
+        with self.assertRaises(ConfigValidationError):
+            WebhookConfig(url="https://test.url", retry_count=True)
+
+    def test_retry_delay_out_of_range_rejected(self):
+        for value in (0, 61):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigValidationError):
+                    WebhookConfig(url="https://test.url", retry_delay=value)
+
+    def test_timeout_out_of_range_rejected(self):
+        for value in (4, 121):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigValidationError):
+                    WebhookConfig(url="https://test.url", timeout=value)
+
+    def test_config_validation_error_is_a_value_error(self):
+        """Existing `except ValueError` call sites must keep working
+        unchanged."""
+        self.assertTrue(issubclass(ConfigValidationError, ValueError))
+
+    def test_valid_config_still_constructs(self):
+        config = WebhookConfig(url="https://test.url", retry_count=1, retry_delay=1, timeout=5)
+        self.assertEqual(config.retry_count, 1)
+
+
+class TestAlertThresholdsInvariants(unittest.TestCase):
+    """AlertThresholds must reject illegal state at construction time
+    (Fix 6), while keeping None ("no alert configured for this field")
+    legal on every field -- that intentional null-to-clear behavior is
+    used throughout the PUT /api/webhook/config flow and must keep
+    working.
+    """
+
+    def test_none_stays_legal_for_every_field(self):
+        thresholds = AlertThresholds(
+            temp_min_c=None, temp_max_c=None,
+            humidity_min=None, humidity_max=None
+        )
+        self.assertIsNone(thresholds.temp_min_c)
+        self.assertIsNone(thresholds.temp_max_c)
+        self.assertIsNone(thresholds.humidity_min)
+        self.assertIsNone(thresholds.humidity_max)
+
+    def test_min_equal_max_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(temp_min_c=20.0, temp_max_c=20.0)
+
+    def test_min_greater_than_max_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(temp_min_c=30.0, temp_max_c=20.0)
+
+    def test_cross_check_skipped_when_either_side_is_none(self):
+        """Only one bound set (the other cleared via null) must not trigger
+        the cross-check -- the same null-to-clear semantics as
+        api_models.validate_thresholds."""
+        thresholds = AlertThresholds(temp_min_c=40.0, temp_max_c=None)
+        self.assertEqual(thresholds.temp_min_c, 40.0)
+
+    def test_humidity_min_equal_max_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(humidity_min=50.0, humidity_max=50.0)
+
+    def test_temp_below_absolute_floor_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(temp_min_c=-9999)
+
+    def test_temp_above_absolute_ceiling_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(temp_max_c=9999)
+
+    def test_humidity_out_of_range_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(humidity_min=-50)
+
+    def test_bool_rejected(self):
+        """Regression: bool is a subclass of int, so True could sneak past
+        a naive numeric range check."""
+        with self.assertRaises(ConfigValidationError):
+            AlertThresholds(humidity_min=True)
+
+
 def main():
     """Run all tests using unittest"""
     # Create a test suite
@@ -842,6 +1046,21 @@ def main():
     suite.addTests(loader.loadTestsFromTestCase(TestThresholdDetection))
     suite.addTests(loader.loadTestsFromTestCase(TestCooldownLogic))
     suite.addTests(loader.loadTestsFromTestCase(TestConfiguration))
+    # NOTE: the six classes below were previously defined in this file but
+    # never added to this suite, so `python3 test_webhook.py` silently
+    # never ran them (unittest discover-style runs were unaffected, since
+    # discovery enumerates TestCase subclasses directly rather than going
+    # through this function). Adding them here so script-style runs
+    # actually execute every test in the file.
+    suite.addTests(loader.loadTestsFromTestCase(TestSuccessStatusCodes))
+    suite.addTests(loader.loadTestsFromTestCase(TestMonotonicCooldown))
+    suite.addTests(loader.loadTestsFromTestCase(TestAlertRecovery))
+    suite.addTests(loader.loadTestsFromTestCase(TestCooldownEndToEnd))
+    suite.addTests(loader.loadTestsFromTestCase(TestSecretScrubbing))
+    suite.addTests(loader.loadTestsFromTestCase(TestSlackPayloadSchema))
+    suite.addTests(loader.loadTestsFromTestCase(TestScrubException))
+    suite.addTests(loader.loadTestsFromTestCase(TestWebhookConfigInvariants))
+    suite.addTests(loader.loadTestsFromTestCase(TestAlertThresholdsInvariants))
 
     # Run with verbosity
     runner = unittest.TextTestRunner(verbosity=2)
